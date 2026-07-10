@@ -1,0 +1,75 @@
+ARG GO_IMAGE=golang:1.25.5-alpine
+ARG NODE_IMAGE=node:22-alpine
+ARG RUNTIME_IMAGE=alpine:3.22
+ARG APP_VERSION=4.17.0
+
+FROM ${NODE_IMAGE} AS frontend
+ARG APP_VERSION
+ENV HUSKY=0 \
+    NODE_OPTIONS=--max-old-space-size=4096
+WORKDIR /src/assets
+
+RUN corepack enable \
+    && corepack prepare yarn@1.22.22 --activate
+COPY assets/package.json assets/yarn.lock ./
+RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
+    yarn install --frozen-lockfile --network-timeout 1000000
+
+COPY assets/ ./
+RUN yarn version --new-version "${APP_VERSION}" --no-git-tag-version \
+    && yarn run build
+
+FROM ${GO_IMAGE} AS backend
+ARG APP_VERSION
+ARG VCS_REF=lite
+ENV CGO_ENABLED=0
+WORKDIR /src
+
+RUN apk add --no-cache unzip zip
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+COPY . ./
+COPY --from=frontend /src/assets/build/ /src/assets/build/
+RUN rm -f application/statics/assets.zip \
+    && zip -qr application/statics/assets.zip assets/build \
+    && mkdir -p /out/statics \
+    && unzip -q application/statics/assets.zip -d /out/statics
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go build -trimpath \
+      -ldflags "-s -w -X github.com/cloudreve/Cloudreve/v4/application/constants.BackendVersion=${APP_VERSION} -X github.com/cloudreve/Cloudreve/v4/application/constants.LastCommit=${VCS_REF}" \
+      -o /out/cloudreve ./
+
+FROM ${RUNTIME_IMAGE}
+
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S -g 10001 cloudreve \
+    && adduser -S -D -H -u 10001 -G cloudreve cloudreve \
+    && mkdir -p /cloudreve/data /opt/cloudreve/statics \
+    && chown -R 10001:10001 /cloudreve /opt/cloudreve
+
+ENV TZ=Asia/Shanghai \
+    GOMEMLIMIT=192MiB \
+    GOGC=50 \
+    CR_CONF_Database.Type=sqlite \
+    CR_CONF_Database.DBFile=/cloudreve/data/cloudreve.db \
+    CR_CONF_Redis.Server= \
+    CR_CONF_System.Listen=:5212 \
+    CR_CONF_System.Debug=false \
+    CR_CONF_System.Pprof=
+WORKDIR /cloudreve
+
+COPY --from=backend --chown=10001:10001 /out/cloudreve /usr/local/bin/cloudreve
+COPY --from=backend --chown=10001:10001 /out/statics/assets/build/ /opt/cloudreve/statics/
+COPY --chmod=755 --chown=10001:10001 scripts/docker-lite-entrypoint.sh /usr/local/bin/docker-lite-entrypoint
+
+USER 10001:10001
+EXPOSE 5212
+VOLUME ["/cloudreve/data"]
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+  CMD wget -q -T 3 -O /dev/null http://127.0.0.1:5212/api/v4/site/ping || exit 1
+
+ENTRYPOINT ["/usr/local/bin/docker-lite-entrypoint"]

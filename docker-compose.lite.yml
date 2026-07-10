@@ -1,0 +1,45 @@
+services:
+  cloudreve-lite:
+    image: cloudreve-lite:local
+    build:
+      context: .
+      dockerfile: Dockerfile.lite
+      args:
+        APP_VERSION: ${CLOUDREVE_LITE_VERSION:-4.17.0}
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:${CLOUDREVE_LITE_PORT:-5212}:5212"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      GOMEMLIMIT: ${CLOUDREVE_LITE_GOMEMLIMIT:-192MiB}
+      GOGC: ${CLOUDREVE_LITE_GOGC:-50}
+      CR_CONF_Database.Type: sqlite
+      CR_CONF_Database.DBFile: /cloudreve/data/cloudreve.db
+      CR_CONF_Redis.Server: ""
+      CR_CONF_System.Listen: :5212
+      CR_CONF_System.Debug: "false"
+      CR_CONF_System.Pprof: ""
+    volumes:
+      - cloudreve_lite_data:/cloudreve/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: 0.75
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:5212/api/v4/site/ping"]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+volumes:
+  cloudreve_lite_data:

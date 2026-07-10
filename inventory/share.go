@@ -213,14 +213,34 @@ func (c *shareClient) Viewed(ctx context.Context, share *ent.Share) error {
 }
 
 // Downloaded increments the download count of the share.
-func (c *shareClient) Downloaded(ctx context.Context, share *ent.Share) error {
-	stm := c.client.Share.
-		UpdateOneID(share.ID).
-		AddDownloads(1)
-	if share.RemainDownloads != nil && *share.RemainDownloads >= 0 {
-		stm.AddRemainDownloads(-1)
+func (c *shareClient) Downloaded(ctx context.Context, shared *ent.Share) error {
+	notExpired := share.Or(share.ExpiresIsNil(), share.ExpiresGT(time.Now()))
+	if shared.RemainDownloads == nil {
+		updated, err := c.client.Share.
+			Update().
+			Where(share.ID(shared.ID), share.DeletedAtIsNil(), notExpired).
+			AddDownloads(1).
+			Save(ctx)
+		if err == nil && updated == 0 {
+			return ErrShareLinkExpired
+		}
+		return err
 	}
-	_, err := stm.Save(ctx)
+
+	updated, err := c.client.Share.
+		Update().
+		Where(
+			share.ID(shared.ID),
+			share.DeletedAtIsNil(),
+			share.RemainDownloadsGT(0),
+			notExpired,
+		).
+		AddDownloads(1).
+		AddRemainDownloads(-1).
+		Save(ctx)
+	if err == nil && updated == 0 {
+		return ErrShareLinkExpired
+	}
 	return err
 }
 

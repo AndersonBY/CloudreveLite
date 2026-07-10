@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+**/.git
+**/node_modules
+assets/build
+application/statics/assets.zip
+cloudreve
+data
+dist
+release
+tmp
+*.db
+*.log

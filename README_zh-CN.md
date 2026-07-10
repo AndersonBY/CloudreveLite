@@ -1,4 +1,14 @@
-[English Version](https://github.com/cloudreve/cloudreve/blob/master/README.md)
+# CloudreveLite
+
+CloudreveLite 是 Cloudreve 的轻量化 Fork，面向由阿里云 OSS 或兼容 S3 的对象存储承载文件的私有临时分享场景。Lite 运行模式采用单进程、SQLite、进程内缓存、磁盘静态资源懒加载，并只启动文件过期回收所必需的后台队列。
+
+第一阶段已经实现；路由、前端和存储驱动的进一步裁剪仍在进行。准确的已实现范围和当前限制见 [Lite 部署文档](docs/LITE.md)。
+
+[English Version](README.md)
+
+---
+
+## 上游 Cloudreve
 
 <h1 align="center">
   <br>

@@ -15,7 +15,10 @@ import (
 func init() {
 	rootCmd.AddCommand(serverCmd)
 	serverCmd.PersistentFlags().StringVarP(&licenseKey, "license-key", "l", "", "License key of your Cloudreve Pro")
+	serverCmd.Flags().BoolVar(&liteMode, "lite", false, "Start Cloudreve with the lightweight runtime profile")
 }
+
+var liteMode bool
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
@@ -26,7 +29,11 @@ var serverCmd = &cobra.Command{
 			dependency.WithProFlag(constants.IsProBool),
 			dependency.WithRequiredDbVersion(constants.BackendVersion),
 		)
-		server := application.NewServer(dep)
+		serverOptions := make([]application.ServerOption, 0, 1)
+		if liteMode {
+			serverOptions = append(serverOptions, application.WithLiteMode())
+		}
+		server := application.NewServer(dep, serverOptions...)
 		logger := dep.Logger()
 
 		server.PrintBanner()

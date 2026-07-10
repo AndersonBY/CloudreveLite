@@ -93,7 +93,8 @@ func (m *manager) GetDirectLink(ctx context.Context, urls ...*fs.URI) ([]DirectL
 
 		// Hooks for entity download
 		if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeBeforeDownload, file); err != nil {
-			m.l.Warning("Failed to execute navigator hooks: %s", err)
+			ae.Add(url.String(), err)
+			continue
 		}
 
 		if useRedirect {
@@ -248,7 +249,8 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 
 		// Hooks for entity download
 		if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeBeforeDownload, file); err != nil {
-			m.l.Warning("Failed to execute navigator hooks: %s", err)
+			ae.Add(arg.URI.String(), err)
+			continue
 		}
 
 		policy, d, err := m.getEntityPolicyDriver(ctx, target, nil)

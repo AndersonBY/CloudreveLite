@@ -1,0 +1,107 @@
+name: Lite validation
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lite-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_VERSION: 4.17.0
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source and frontend
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Activate Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+
+      - name: Build frontend assets
+        working-directory: assets
+        env:
+          HUSKY: "0"
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          yarn install --frozen-lockfile --network-timeout 1000000
+          yarn version --new-version "${APP_VERSION}" --no-git-tag-version
+          yarn run build
+
+      - name: Generate embedded asset archive
+        run: zip -qr application/statics/assets.zip assets/build
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.5
+          cache: true
+
+      - name: Run Lite Go tests
+        run: >-
+          go test
+          ./application/...
+          ./cmd/...
+          ./routers/...
+          ./inventory
+          ./service/basic
+          ./service/share
+          ./service/user
+          ./pkg/filemanager/manager
+
+      - name: Build all Go packages
+        run: go build ./...
+
+      - name: Check entrypoint syntax
+        run: sh -n scripts/docker-lite-entrypoint.sh
+
+      - name: Build Lite image
+        run: >-
+          docker build
+          --file Dockerfile.lite
+          --build-arg APP_VERSION="${APP_VERSION}"
+          --tag cloudreve-lite:ci
+          .
+
+      - name: Smoke test Lite container
+        run: |
+          docker volume create cloudreve-lite-ci
+          container_id="$(docker run --detach --read-only --tmpfs /tmp:size=32m,mode=1777 --volume cloudreve-lite-ci:/cloudreve/data --publish 127.0.0.1:5212:5212 cloudreve-lite:ci)"
+          cleanup() {
+            docker logs "${container_id}" || true
+            docker rm --force "${container_id}" || true
+            docker volume rm cloudreve-lite-ci || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:5212/api/v4/site/ping >/dev/null; then
+              break
+            fi
+            if [ "${attempt}" -eq 45 ]; then
+              echo "Lite container did not become healthy" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker exec "${container_id}" test -f /cloudreve/data/conf.ini

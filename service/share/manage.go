@@ -17,6 +17,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	DefaultShareExpire        = 7 * 24 * time.Hour
+	MaxShareExpire            = 30 * 24 * time.Hour
+	DefaultShareDownloadLimit = 10
+	MaxShareDownloadLimit     = 100
+)
+
 type (
 	// ShareCreateService 创建新分享服务
 	ShareCreateService struct {
@@ -76,16 +83,15 @@ func (service *ShareCreateService) Upsert(c *gin.Context, existed int) (string, 
 		return "", serializer.NewError(serializer.CodeParamErr, "unknown uri", err)
 	}
 
-	var expires *time.Time
-	if service.Expire > 0 {
-		expires = new(time.Time)
-		*expires = time.Now().Add(time.Duration(service.Expire) * time.Second)
+	expires, downloads, err := normalizeSharePolicy(time.Now(), service.Expire, service.RemainDownloads)
+	if err != nil {
+		return "", serializer.NewError(serializer.CodeParamErr, "Invalid temporary share policy", err)
 	}
 
 	share, err := m.CreateOrUpdateShare(c, uri, &manager.CreateShareArgs{
 		IsPrivate:       service.IsPrivate,
 		Password:        service.Password,
-		RemainDownloads: service.RemainDownloads,
+		RemainDownloads: downloads,
 		Expire:          expires,
 		ExistedShareID:  existed,
 		ShareView:       service.ShareView,
@@ -97,6 +103,25 @@ func (service *ShareCreateService) Upsert(c *gin.Context, existed int) (string, 
 
 	base := dep.SettingProvider().SiteURL(c)
 	return explorer.BuildShareLink(share, dep.HashIDEncoder(), base, true), nil
+}
+
+func normalizeSharePolicy(now time.Time, expireSeconds, downloads int) (*time.Time, int, error) {
+	if expireSeconds <= 0 {
+		expireSeconds = int(DefaultShareExpire / time.Second)
+	}
+	if expireSeconds > int(MaxShareExpire/time.Second) {
+		return nil, 0, fmt.Errorf("share expiration must not exceed %d days", int(MaxShareExpire/(24*time.Hour)))
+	}
+
+	if downloads <= 0 {
+		downloads = DefaultShareDownloadLimit
+	}
+	if downloads > MaxShareDownloadLimit {
+		return nil, 0, fmt.Errorf("share download limit must not exceed %d", MaxShareDownloadLimit)
+	}
+
+	expires := now.Add(time.Duration(expireSeconds) * time.Second)
+	return &expires, downloads, nil
 }
 
 func DeleteShare(c *gin.Context, shareId int) error {

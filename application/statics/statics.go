@@ -36,6 +36,9 @@ type version struct {
 	Version string `json:"version"`
 }
 
+// StaticFSSupplier creates the embedded static filesystem on demand.
+type StaticFSSupplier func() fs.FS
+
 // Open 打开文件
 func (b *GinFS) Open(name string) (http.File, error) {
 	return b.FS.Open(name)
@@ -50,14 +53,14 @@ func (b *GinFS) Exists(prefix string, filepath string) bool {
 }
 
 // NewServerStaticFS 初始化静态资源文件
-func NewServerStaticFS(l logging.Logger, statics fs.FS, isPro bool) (static.ServeFileSystem, error) {
+func NewServerStaticFS(l logging.Logger, staticsSupplier StaticFSSupplier, isPro bool) (static.ServeFileSystem, error) {
 	var staticFS static.ServeFileSystem
 	if util.Exists(util.DataPath(StaticFolder)) {
 		l.Info("Folder with %q already exists, it will be used to serve static files.", util.DataPath(StaticFolder))
 		staticFS = static.LocalFile(util.DataPath(StaticFolder), false)
 	} else {
 		// 初始化静态资源
-		embedFS, err := fs.Sub(statics, "assets/build")
+		embedFS, err := fs.Sub(staticsSupplier(), "assets/build")
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize static resources: %w", err)
 		}
@@ -72,6 +75,7 @@ func NewServerStaticFS(l logging.Logger, statics fs.FS, isPro bool) (static.Serv
 		l.Warning("Missing version identifier file in static resources, please delete \"statics\" folder and rebuild it.")
 		return staticFS, nil
 	}
+	defer f.Close()
 
 	b, err := io.ReadAll(f)
 	if err != nil {

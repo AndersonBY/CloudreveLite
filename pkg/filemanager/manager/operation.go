@@ -299,6 +299,13 @@ func (l *manager) CreateOrUpdateShare(ctx context.Context, path *fs.URI, args *C
 		return nil, serializer.NewError(serializer.CodeNoPermissionErr, "cannot share symbolic file", nil)
 	}
 
+	lockSession, err := l.Lock(ctx, -1, l.user, false, fs.LockApp(fs.ApplicationShare), file.Uri(false), "")
+	if err != nil {
+		return nil, serializer.NewError(serializer.CodeConflict, "failed to lock shared source", err)
+	}
+	defer func() { _ = l.Unlock(ctx, lockSession.LastToken()) }()
+	ctx = fs.LockSessionToContext(ctx, lockSession)
+
 	var existed *ent.Share
 	shareClient := l.dep.ShareClient()
 	if args.ExistedShareID != 0 {

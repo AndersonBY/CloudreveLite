@@ -92,6 +92,9 @@ func (f *DBFS) Lock(ctx context.Context, d time.Duration, requester *ent.User, z
 	}
 	ls, err := f.acquireByPath(ctx, d, requester, zeroDepth, application, lr)
 	if err != nil {
+		if releaseErr := f.Release(ctx, ls); releaseErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("release failed lock session: %w", releaseErr))
+		}
 		return nil, err
 	}
 

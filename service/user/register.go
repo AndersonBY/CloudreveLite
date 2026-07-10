@@ -22,6 +22,17 @@ import (
 // RegisterParameterCtx define key fore UserRegisterService
 type RegisterParameterCtx struct{}
 
+// CanSelfRegister allows only the first account bootstrap flow. The first
+// registered account is promoted to the administrator group by UserClient.
+func CanSelfRegister(ctx context.Context, dep dependency.Dep) bool {
+	if !dep.SettingProvider().RegisterEnabled(ctx) {
+		return false
+	}
+
+	count, err := dep.UserClient().CountByTimeRange(ctx, nil, nil)
+	return err == nil && count == 0
+}
+
 // UserRegisterService 管理用户注册的服务
 type UserRegisterService struct {
 	UserName string `form:"email" json:"email" binding:"required,email"`
@@ -50,6 +61,15 @@ func (service *UserRegisterService) Register(c *gin.Context) serializer.Response
 	uc, tx, _, err := inventory.WithTx(c, userClient)
 	if err != nil {
 		return serializer.DBErr(c, "Failed to start transaction", err)
+	}
+	userCount, err := uc.CountByTimeRange(c, nil, nil)
+	if err != nil {
+		_ = inventory.Rollback(tx)
+		return serializer.DBErr(c, "Failed to check bootstrap account", err)
+	}
+	if userCount > 0 {
+		_ = inventory.Rollback(tx)
+		return serializer.ErrWithDetails(c, serializer.CodeNoPermissionErr, "Public registration is disabled", nil)
 	}
 
 	expectedUser, err := uc.Create(c, args)

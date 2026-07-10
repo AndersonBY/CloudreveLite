@@ -33,23 +33,26 @@ type Server interface {
 }
 
 // NewServer constructs a new Cloudreve server instance with given dependency.
-func NewServer(dep dependency.Dep) Server {
+func NewServer(dep dependency.Dep, opts ...ServerOption) Server {
+	options := newServerOptions(opts...)
 	return &server{
-		dep:    dep,
-		logger: dep.Logger(),
-		config: dep.ConfigProvider(),
+		dep:            dep,
+		logger:         dep.Logger(),
+		config:         dep.ConfigProvider(),
+		startupProfile: options.startupProfile,
 	}
 }
 
 type server struct {
-	dep         dependency.Dep
-	logger      logging.Logger
-	dbClient    *ent.Client
-	config      conf.ConfigProvider
-	server      *http.Server
-	pprofServer *http.Server
-	kv          cache.Driver
-	mailQueue   email.Driver
+	dep            dependency.Dep
+	logger         logging.Logger
+	dbClient       *ent.Client
+	config         conf.ConfigProvider
+	server         *http.Server
+	pprofServer    *http.Server
+	kv             cache.Driver
+	mailQueue      email.Driver
+	startupProfile startupProfile
 }
 
 func (s *server) PrintBanner() {
@@ -86,28 +89,38 @@ func (s *server) Start() error {
 		s.dep.LockSystem()
 		s.dep.UAParser()
 
-		// Initialize OneDrive credentials
-		credentials, err := onedrive.RetrieveOneDriveCredentials(context.Background(), s.dep.StoragePolicyClient())
-		if err != nil {
-			return fmt.Errorf("faield to retrieve OneDrive credentials for CredManager: %w", err)
+		if s.startupProfile.oneDriveCredentials {
+			credentials, err := onedrive.RetrieveOneDriveCredentials(context.Background(), s.dep.StoragePolicyClient())
+			if err != nil {
+				return fmt.Errorf("faield to retrieve OneDrive credentials for CredManager: %w", err)
+			}
+			if err := s.dep.CredManager().Upsert(context.Background(), credentials...); err != nil {
+				return fmt.Errorf("failed to upsert OneDrive credentials to CredManager: %w", err)
+			}
+			crontab.Register(setting.CronTypeOauthCredRefresh, func(ctx context.Context) {
+				dep := dependency.FromContext(ctx)
+				cred := dep.CredManager()
+				cred.RefreshAll(ctx)
+			})
 		}
-		if err := s.dep.CredManager().Upsert(context.Background(), credentials...); err != nil {
-			return fmt.Errorf("failed to upsert OneDrive credentials to CredManager: %w", err)
-		}
-		crontab.Register(setting.CronTypeOauthCredRefresh, func(ctx context.Context) {
-			dep := dependency.FromContext(ctx)
-			cred := dep.CredManager()
-			cred.RefreshAll(ctx)
-		})
 
 		// Initialize email queue before user traffic starts.
-		_ = s.dep.EmailClient(context.Background())
+		if s.startupProfile.emailQueue {
+			_ = s.dep.EmailClient(context.Background())
+		}
 
-		// Start all queues
-		s.dep.MediaMetaQueue(context.Background()).Start()
-		s.dep.EntityRecycleQueue(context.Background()).Start()
-		s.dep.IoIntenseQueue(context.Background()).Start()
-		s.dep.RemoteDownloadQueue(context.Background()).Start()
+		if s.startupProfile.mediaMetaQueue {
+			s.dep.MediaMetaQueue(context.Background()).Start()
+		}
+		if s.startupProfile.entityRecycleQueue {
+			s.dep.EntityRecycleQueue(context.Background()).Start()
+		}
+		if s.startupProfile.ioIntenseQueue {
+			s.dep.IoIntenseQueue(context.Background()).Start()
+		}
+		if s.startupProfile.remoteDownloadQueue {
+			s.dep.RemoteDownloadQueue(context.Background()).Start()
+		}
 
 		// Start cron jobs
 		c, err := crontab.NewCron(context.Background(), s.dep)
@@ -123,7 +136,9 @@ func (s *server) Start() error {
 	} else {
 		s.dep.SlaveQueue(context.Background()).Start()
 	}
-	s.dep.ThumbQueue(context.Background()).Start()
+	if s.startupProfile.thumbQueue {
+		s.dep.ThumbQueue(context.Background()).Start()
+	}
 
 	api := routers.InitRouter(s.dep)
 	api.TrustedPlatform = s.config.System().ProxyHeader

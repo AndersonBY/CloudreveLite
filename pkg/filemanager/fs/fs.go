@@ -693,6 +693,7 @@ const (
 	ApplicationViewer         ApplicationType = "viewer"
 	ApplicationMount          ApplicationType = "mount"
 	ApplicationRelocate       ApplicationType = "relocate"
+	ApplicationShare          ApplicationType = "share"
 )
 
 func LockApp(a ApplicationType) lock.Application {

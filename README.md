@@ -1,4 +1,14 @@
-[中文版本](https://github.com/cloudreve/cloudreve/blob/master/README_zh-CN.md)
+# CloudreveLite
+
+CloudreveLite is a resource-conscious fork of Cloudreve for private, temporary file sharing backed by Aliyun OSS or S3-compatible object storage. The Lite runtime uses one process, SQLite, in-memory caching, lazy disk-backed frontend assets, and only the cleanup queue required by expiring files.
+
+The first milestone is implemented; route, frontend, and storage-driver pruning remains in progress. See [the Lite deployment guide](docs/LITE.md) for the exact implemented scope and current limitations.
+
+[中文版本](README_zh-CN.md)
+
+---
+
+## Upstream Cloudreve
 
 <h1 align="center">
   <br>

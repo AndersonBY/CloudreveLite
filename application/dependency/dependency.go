@@ -317,7 +317,7 @@ func (d *dependency) ServerStaticFS() static.ServeFileSystem {
 		return d.serverStaticFS
 	}
 
-	sfs, err := statics.NewServerStaticFS(d.Logger(), d.Statics(), d.isPro)
+	sfs, err := statics.NewServerStaticFS(d.Logger(), d.Statics, d.isPro)
 	if err != nil {
 		d.panicError(err)
 	}

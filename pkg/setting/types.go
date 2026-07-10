@@ -110,6 +110,7 @@ type CronType string
 var (
 	CronTypeEntityCollect    = CronType("entity_collect")
 	CronTypeTrashBinCollect  = CronType("trash_bin_collect")
+	CronTypeShareCleanup     = CronType("share_cleanup")
 	CronTypeOauthCredRefresh = CronType("oauth_cred_refresh")
 )
 
