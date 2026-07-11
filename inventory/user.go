@@ -304,6 +304,10 @@ func (c *userClient) Create(ctx context.Context, args *NewUserArgs) (*ent.User, 
 		}
 		return existedUser, ErrUserEmailExisted
 	}
+	userCount, err := c.client.User.Query().Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count users before create: %w", err)
+	}
 
 	nick := args.Nick
 	if nick == "" {
@@ -338,7 +342,7 @@ func (c *userClient) Create(ctx context.Context, args *NewUserArgs) (*ent.User, 
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	if newUser.ID == 1 {
+	if userCount == 0 {
 		// For the first user registered, elevate it to admin group.
 		if _, err := newUser.Update().SetGroupID(1).Save(ctx); err != nil {
 			return newUser, fmt.Errorf("failed to elevate user to admin: %w", err)
