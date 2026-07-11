@@ -25,17 +25,11 @@ ARG VCS_REF=lite
 ENV CGO_ENABLED=0
 WORKDIR /src
 
-RUN apk add --no-cache unzip zip
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 COPY . ./
-COPY --from=frontend /src/assets/build/ /src/assets/build/
-RUN rm -f application/statics/assets.zip \
-    && zip -qr application/statics/assets.zip assets/build \
-    && mkdir -p /out/statics \
-    && unzip -q application/statics/assets.zip -d /out/statics
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath \
@@ -53,16 +47,16 @@ RUN apk add --no-cache ca-certificates tzdata \
 ENV TZ=Asia/Shanghai \
     GOMEMLIMIT=192MiB \
     GOGC=50 \
+    CLOUDREVE_STATIC_DIR=/opt/cloudreve/statics \
     CR_CONF_Database.Type=sqlite \
     CR_CONF_Database.DBFile=/cloudreve/data/cloudreve.db \
     CR_CONF_Redis.Server= \
     CR_CONF_System.Listen=:5212 \
-    CR_CONF_System.Debug=false \
-    CR_CONF_System.Pprof=
+    CR_CONF_System.Debug=false
 WORKDIR /cloudreve
 
 COPY --from=backend --chown=10001:10001 /out/cloudreve /usr/local/bin/cloudreve
-COPY --from=backend --chown=10001:10001 /out/statics/assets/build/ /opt/cloudreve/statics/
+COPY --from=frontend --chown=10001:10001 /src/assets/build/ /opt/cloudreve/statics/
 COPY --chmod=755 --chown=10001:10001 scripts/docker-lite-entrypoint.sh /usr/local/bin/docker-lite-entrypoint
 
 USER 10001:10001

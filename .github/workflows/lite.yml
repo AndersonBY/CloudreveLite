@@ -47,9 +47,6 @@ jobs:
           yarn version --new-version "${APP_VERSION}" --no-git-tag-version
           yarn run build
 
-      - name: Generate embedded asset archive
-        run: zip -qr application/statics/assets.zip assets/build
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -63,7 +60,9 @@ jobs:
           ./cmd/...
           ./routers/...
           ./inventory
+          ./service/admin
           ./service/basic
+          ./service/callback
           ./service/share
           ./service/user
           ./pkg/filemanager/manager
@@ -105,3 +104,6 @@ jobs:
           done
 
           docker exec "${container_id}" test -f /cloudreve/data/conf.ini
+          docker exec "${container_id}" test -f /opt/cloudreve/statics/index.html
+          docker exec "${container_id}" test ! -e /cloudreve/data/statics
+          curl --fail --silent http://127.0.0.1:5212/ >/dev/null

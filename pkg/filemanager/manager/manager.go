@@ -22,7 +22,8 @@ import (
 )
 
 var (
-	ErrUnknownPolicyType = serializer.NewError(serializer.CodeInternalSetting, "Unknown policy type", nil)
+	ErrUnknownPolicyType     = serializer.NewError(serializer.CodeInternalSetting, "Unknown policy type", nil)
+	ErrUnsupportedPolicyType = serializer.NewError(serializer.CodeInternalSetting, "Storage policy type is not supported by CloudreveLite", nil)
 )
 
 const (

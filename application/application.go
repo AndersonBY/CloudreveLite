@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -16,8 +15,6 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/conf"
 	"github.com/cloudreve/Cloudreve/v4/pkg/crontab"
-	"github.com/cloudreve/Cloudreve/v4/pkg/email"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/onedrive"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -33,26 +30,21 @@ type Server interface {
 }
 
 // NewServer constructs a new Cloudreve server instance with given dependency.
-func NewServer(dep dependency.Dep, opts ...ServerOption) Server {
-	options := newServerOptions(opts...)
+func NewServer(dep dependency.Dep) Server {
 	return &server{
-		dep:            dep,
-		logger:         dep.Logger(),
-		config:         dep.ConfigProvider(),
-		startupProfile: options.startupProfile,
+		dep:    dep,
+		logger: dep.Logger(),
+		config: dep.ConfigProvider(),
 	}
 }
 
 type server struct {
-	dep            dependency.Dep
-	logger         logging.Logger
-	dbClient       *ent.Client
-	config         conf.ConfigProvider
-	server         *http.Server
-	pprofServer    *http.Server
-	kv             cache.Driver
-	mailQueue      email.Driver
-	startupProfile startupProfile
+	dep      dependency.Dep
+	logger   logging.Logger
+	dbClient *ent.Client
+	config   conf.ConfigProvider
+	server   *http.Server
+	kv       cache.Driver
 }
 
 func (s *server) PrintBanner() {
@@ -82,81 +74,23 @@ func (s *server) Start() error {
 		memKv.GarbageCollect(s.logger)
 	}
 
-	// TODO: make sure redis is connected in dep before user traffic.
-	if s.config.System().Mode == conf.MasterMode {
-		s.dbClient = s.dep.DBClient()
-		// TODO: make sure all dep is initialized before server start.
-		s.dep.LockSystem()
-		s.dep.UAParser()
-
-		if s.startupProfile.oneDriveCredentials {
-			credentials, err := onedrive.RetrieveOneDriveCredentials(context.Background(), s.dep.StoragePolicyClient())
-			if err != nil {
-				return fmt.Errorf("faield to retrieve OneDrive credentials for CredManager: %w", err)
-			}
-			if err := s.dep.CredManager().Upsert(context.Background(), credentials...); err != nil {
-				return fmt.Errorf("failed to upsert OneDrive credentials to CredManager: %w", err)
-			}
-			crontab.Register(setting.CronTypeOauthCredRefresh, func(ctx context.Context) {
-				dep := dependency.FromContext(ctx)
-				cred := dep.CredManager()
-				cred.RefreshAll(ctx)
-			})
-		}
-
-		// Initialize email queue before user traffic starts.
-		if s.startupProfile.emailQueue {
-			_ = s.dep.EmailClient(context.Background())
-		}
-
-		if s.startupProfile.mediaMetaQueue {
-			s.dep.MediaMetaQueue(context.Background()).Start()
-		}
-		if s.startupProfile.entityRecycleQueue {
-			s.dep.EntityRecycleQueue(context.Background()).Start()
-		}
-		if s.startupProfile.ioIntenseQueue {
-			s.dep.IoIntenseQueue(context.Background()).Start()
-		}
-		if s.startupProfile.remoteDownloadQueue {
-			s.dep.RemoteDownloadQueue(context.Background()).Start()
-		}
-
-		// Start cron jobs
-		c, err := crontab.NewCron(context.Background(), s.dep)
-		if err != nil {
-			return err
-		}
-		c.Start()
-
-		// Start node pool
-		if _, err := s.dep.NodePool(context.Background()); err != nil {
-			return err
-		}
-	} else {
-		s.dep.SlaveQueue(context.Background()).Start()
+	if s.config.System().Mode != conf.MasterMode {
+		return fmt.Errorf("CloudreveLite only supports master mode")
 	}
-	if s.startupProfile.thumbQueue {
-		s.dep.ThumbQueue(context.Background()).Start()
+
+	s.dbClient = s.dep.DBClient()
+	s.dep.LockSystem()
+	s.dep.EntityRecycleQueue(context.Background()).Start()
+
+	cron, err := crontab.NewCron(context.Background(), s.dep)
+	if err != nil {
+		return err
 	}
+	cron.Start()
 
 	api := routers.InitRouter(s.dep)
 	api.TrustedPlatform = s.config.System().ProxyHeader
 	s.server = &http.Server{Handler: api}
-
-	// Start pprof server if configured
-	if pprofAddr := s.config.System().Pprof; pprofAddr != "" {
-		s.pprofServer = &http.Server{
-			Addr:    pprofAddr,
-			Handler: http.DefaultServeMux,
-		}
-		go func() {
-			s.logger.Info("pprof server listening on %q", pprofAddr)
-			if err := s.pprofServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				s.logger.Error("pprof server error: %s", err)
-			}
-		}()
-	}
 
 	// 如果启用了SSL
 	if s.config.SSL().CertPath != "" {
@@ -216,13 +150,6 @@ func (s *server) Close() {
 		err := s.server.Shutdown(ctx)
 		if err != nil {
 			s.logger.Error("Failed to shutdown server: %s", err)
-		}
-	}
-
-	// Shutdown pprof server
-	if s.pprofServer != nil {
-		if err := s.pprofServer.Shutdown(ctx); err != nil {
-			s.logger.Error("Failed to shutdown pprof server: %s", err)
 		}
 	}
 

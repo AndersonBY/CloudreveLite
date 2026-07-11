@@ -46,7 +46,8 @@ type (
 
 	ListPolicyParameters struct {
 		*PaginationArgs
-		Type types.PolicyType
+		Type  types.PolicyType
+		Types []types.PolicyType
 	}
 
 	ListPolicyResult struct {
@@ -207,6 +208,13 @@ func (c *storagePolicyClient) ListPolicies(ctx context.Context, args *ListPolicy
 	query := c.client.StoragePolicy.Query().WithNode()
 	if args.Type != "" {
 		query = query.Where(storagepolicy.TypeEQ(string(args.Type)))
+	}
+	if len(args.Types) > 0 {
+		allowedTypes := make([]string, 0, len(args.Types))
+		for _, policyType := range args.Types {
+			allowedTypes = append(allowedTypes, string(policyType))
+		}
+		query = query.Where(storagepolicy.TypeIn(allowedTypes...))
 	}
 	query.Order(getStoragePolicyOrderOption(args)...)
 

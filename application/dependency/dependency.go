@@ -3,7 +3,6 @@ package dependency
 import (
 	"context"
 	"errors"
-	iofs "io/fs"
 	"net/url"
 	"sync"
 	"time"
@@ -53,12 +52,12 @@ type (
 // Dep manages all dependencies of the server application. The default implementation is not
 // concurrent safe, so all inner deps should be initialized before any goroutine starts.
 type Dep interface {
+	// IsLiteMode reports whether the server is running with the Lite feature profile.
+	IsLiteMode() bool
 	// ConfigProvider Get a singleton conf.ConfigProvider instance.
 	ConfigProvider() conf.ConfigProvider
 	// Logger Get a singleton logging.Logger instance.
 	Logger() logging.Logger
-	// Statics Get a singleton fs.FS instance for embedded static resources.
-	Statics() iofs.FS
 	// ServerStaticFS Get a singleton static.ServeFileSystem instance for serving static resources.
 	ServerStaticFS() static.ServeFileSystem
 	// DBClient Get a singleton ent.Client instance for database access.
@@ -151,7 +150,6 @@ type Dep interface {
 type dependency struct {
 	configProvider        conf.ConfigProvider
 	logger                logging.Logger
-	statics               iofs.FS
 	serverStaticFS        static.ServeFileSystem
 	dbClient              *ent.Client
 	rawEntClient          *ent.Client
@@ -199,6 +197,7 @@ type dependency struct {
 
 	configPath        string
 	isPro             bool
+	liteMode          bool
 	requiredDbVersion string
 
 	// Protects inner deps that can be reloaded at runtime.
@@ -218,6 +217,10 @@ func NewDependency(opts ...Option) Dep {
 // FromContext retrieves a Dep instance from context.
 func FromContext(ctx context.Context) Dep {
 	return ctx.Value(DepCtx{}).(Dep)
+}
+
+func (d *dependency) IsLiteMode() bool {
+	return d.liteMode
 }
 
 func (d *dependency) RequestClient(opts ...request.Option) request.Client {
@@ -303,21 +306,12 @@ func (d *dependency) Logger() logging.Logger {
 	return d.logger
 }
 
-func (d *dependency) Statics() iofs.FS {
-	if d.statics != nil {
-		return d.statics
-	}
-
-	d.statics = statics.NewStaticFS(d.Logger())
-	return d.statics
-}
-
 func (d *dependency) ServerStaticFS() static.ServeFileSystem {
 	if d.serverStaticFS != nil {
 		return d.serverStaticFS
 	}
 
-	sfs, err := statics.NewServerStaticFS(d.Logger(), d.Statics, d.isPro)
+	sfs, err := statics.NewServerStaticFS(d.Logger(), d.isPro)
 	if err != nil {
 		d.panicError(err)
 	}

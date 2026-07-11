@@ -7,16 +7,9 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/cos"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/ks3"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/local"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/obs"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/onedrive"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/oss"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/qiniu"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/remote"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/s3"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/upyun"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 )
@@ -66,26 +59,12 @@ func (m *manager) GetStorageDriver(ctx context.Context, policy *ent.StoragePolic
 	switch policy.Type {
 	case types.PolicyTypeLocal:
 		return local.New(policy, m.l, m.config), nil
-	case types.PolicyTypeRemote:
-		return remote.New(ctx, policy, m.settings, m.config, m.l)
 	case types.PolicyTypeOss:
 		return oss.New(ctx, policy, m.settings, m.config, m.l, m.dep.MimeDetector(ctx))
-	case types.PolicyTypeCos:
-		return cos.New(ctx, policy, m.settings, m.config, m.l, m.dep.MimeDetector(ctx))
 	case types.PolicyTypeS3:
 		return s3.New(ctx, policy, m.settings, m.config, m.l, m.dep.MimeDetector(ctx))
-	case types.PolicyTypeKs3:
-		return ks3.New(ctx, policy, m.settings, m.config, m.l, m.dep.MimeDetector(ctx))
-	case types.PolicyTypeObs:
-		return obs.New(ctx, policy, m.settings, m.config, m.l, m.dep.MimeDetector(ctx))
-	case types.PolicyTypeQiniu:
-		return qiniu.New(ctx, policy, m.settings, m.config, m.l, m.dep.MimeDetector(ctx))
-	case types.PolicyTypeUpyun:
-		return upyun.New(ctx, policy, m.settings, m.config, m.l, m.dep.MimeDetector(ctx))
-	case types.PolicyTypeOd:
-		return onedrive.New(ctx, policy, m.settings, m.config, m.l, m.dep.CredManager())
 	default:
-		return nil, ErrUnknownPolicyType
+		return nil, ErrUnsupportedPolicyType
 	}
 }
 

@@ -2,8 +2,6 @@ package admin
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -15,11 +13,6 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
-	"github.com/cloudreve/Cloudreve/v4/pkg/credmanager"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/cos"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/ks3"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/obs"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/onedrive"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/oss"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/s3"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
@@ -76,6 +69,9 @@ func (service *SingleStoragePolicyService) Delete(c *gin.Context) error {
 	policy, err := storagePolicyClient.GetPolicyByID(ctx, service.ID)
 	if err != nil {
 		return serializer.NewError(serializer.CodePolicyNotExist, "", err)
+	}
+	if err := validateLitePolicyType(dep, types.PolicyType(policy.Type)); err != nil {
+		return err
 	}
 
 	// If policy is used by groups, return error
@@ -187,23 +183,49 @@ func (service *PathTestService) Test() serializer.Response {
 
 const (
 	policyTypeCondition = "policy_type"
+	litePolicyTypeError = "Lite mode only supports Aliyun OSS and S3 storage policies"
 )
+
+var litePolicyTypes = []types.PolicyType{types.PolicyTypeOss, types.PolicyTypeS3}
+
+func isLitePolicyType(policyType types.PolicyType) bool {
+	return policyType == types.PolicyTypeOss || policyType == types.PolicyTypeS3
+}
+
+func validateLitePolicyType(dep dependency.Dep, policyType types.PolicyType) error {
+	if dep.IsLiteMode() && !isLitePolicyType(policyType) {
+		return serializer.NewError(serializer.CodeParamErr, litePolicyTypeError, nil)
+	}
+
+	return nil
+}
 
 // Policies 列出存储策略
 func (service *AdminListService) Policies(c *gin.Context) (*ListPolicyResponse, error) {
 	dep := dependency.FromContext(c)
 	storagePolicyClient := dep.StoragePolicyClient()
+	requestedType := types.PolicyType(service.Conditions[policyTypeCondition])
+	if requestedType != "" {
+		if err := validateLitePolicyType(dep, requestedType); err != nil {
+			return nil, err
+		}
+	}
 
 	ctx := context.WithValue(c, inventory.LoadStoragePolicyGroup{}, true)
-	res, err := storagePolicyClient.ListPolicies(ctx, &inventory.ListPolicyParameters{
+	parameters := &inventory.ListPolicyParameters{
 		PaginationArgs: &inventory.PaginationArgs{
 			Page:     service.Page - 1,
 			PageSize: service.PageSize,
 			OrderBy:  service.OrderBy,
 			Order:    inventory.OrderDirection(service.OrderDirection),
 		},
-		Type: types.PolicyType(service.Conditions[policyTypeCondition]),
-	})
+		Type: requestedType,
+	}
+	if dep.IsLiteMode() {
+		parameters.Types = litePolicyTypes
+	}
+
+	res, err := storagePolicyClient.ListPolicies(ctx, parameters)
 
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to list policies", err)
@@ -236,6 +258,9 @@ func (service *SingleStoragePolicyService) Get(c *gin.Context) (*GetStoragePolic
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to get policy", err)
 	}
+	if err := validateLitePolicyType(dep, types.PolicyType(policy.Type)); err != nil {
+		return nil, err
+	}
 
 	res := &GetStoragePolicyResponse{StoragePolicy: policy}
 	if c.Query(countEntityQuery) != "" {
@@ -260,6 +285,9 @@ type (
 func (service *CreateStoragePolicyService) Create(c *gin.Context) (*GetStoragePolicyResponse, error) {
 	dep := dependency.FromContext(c)
 	storagePolicyClient := dep.StoragePolicyClient()
+	if err := validateLitePolicyType(dep, types.PolicyType(service.Policy.Type)); err != nil {
+		return nil, err
+	}
 
 	if service.Policy.Type == types.PolicyTypeLocal {
 		service.Policy.DirNameRule = util.DataPath("uploads/{uid}/{path}")
@@ -284,6 +312,9 @@ type (
 func (service *UpdateStoragePolicyService) Update(c *gin.Context) (*GetStoragePolicyResponse, error) {
 	dep := dependency.FromContext(c)
 	storagePolicyClient := dep.StoragePolicyClient()
+	if err := validateLitePolicyType(dep, types.PolicyType(service.Policy.Type)); err != nil {
+		return nil, err
+	}
 
 	id := c.Param("id")
 	if id == "" {
@@ -292,6 +323,18 @@ func (service *UpdateStoragePolicyService) Update(c *gin.Context) (*GetStoragePo
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeParamErr, "Invalid ID", err)
+	}
+	if dep.IsLiteMode() {
+		existing, err := storagePolicyClient.GetPolicyByID(
+			context.WithValue(c, inventory.SkipStoragePolicyCache{}, true),
+			idInt,
+		)
+		if err != nil {
+			return nil, serializer.NewError(serializer.CodePolicyNotExist, "", err)
+		}
+		if err := validateLitePolicyType(dep, types.PolicyType(existing.Type)); err != nil {
+			return nil, err
+		}
 	}
 
 	service.Policy.ID = idInt
@@ -326,6 +369,9 @@ type (
 
 func (service *CreateStoragePolicyCorsService) Create(c *gin.Context) error {
 	dep := dependency.FromContext(c)
+	if err := validateLitePolicyType(dep, types.PolicyType(service.Policy.Type)); err != nil {
+		return err
+	}
 
 	switch service.Policy.Type {
 	case types.PolicyTypeOss:
@@ -333,18 +379,6 @@ func (service *CreateStoragePolicyCorsService) Create(c *gin.Context) error {
 		if err != nil {
 			return serializer.NewError(serializer.CodeDBError, "Failed to create oss driver", err)
 		}
-		if err := handler.CORS(); err != nil {
-			return serializer.NewError(serializer.CodeInternalSetting, "Failed to create cors: "+err.Error(), err)
-		}
-
-		return nil
-
-	case types.PolicyTypeCos:
-		handler, err := cos.New(c, service.Policy, dep.SettingProvider(), dep.ConfigProvider(), dep.Logger(), dep.MimeDetector(c))
-		if err != nil {
-			return serializer.NewError(serializer.CodeDBError, "Failed to create cos driver", err)
-		}
-
 		if err := handler.CORS(); err != nil {
 			return serializer.NewError(serializer.CodeInternalSetting, "Failed to create cors: "+err.Error(), err)
 		}
@@ -363,28 +397,6 @@ func (service *CreateStoragePolicyCorsService) Create(c *gin.Context) error {
 
 		return nil
 
-	case types.PolicyTypeKs3:
-		handler, err := ks3.New(c, service.Policy, dep.SettingProvider(), dep.ConfigProvider(), dep.Logger(), dep.MimeDetector(c))
-		if err != nil {
-			return serializer.NewError(serializer.CodeDBError, "Failed to create ks3 driver", err)
-		}
-
-		if err := handler.CORS(); err != nil {
-			return serializer.NewError(serializer.CodeInternalSetting, "Failed to create cors: "+err.Error(), err)
-		}
-
-		return nil
-	case types.PolicyTypeObs:
-		handler, err := obs.New(c, service.Policy, dep.SettingProvider(), dep.ConfigProvider(), dep.Logger(), dep.MimeDetector(c))
-		if err != nil {
-			return serializer.NewError(serializer.CodeDBError, "Failed to create obs driver", err)
-		}
-
-		if err := handler.CORS(); err != nil {
-			return serializer.NewError(serializer.CodeInternalSetting, "Failed to create cors: "+err.Error(), err)
-		}
-
-		return nil
 	default:
 		return serializer.NewError(serializer.CodeParamErr, "Unsupported policy type", nil)
 	}
@@ -401,30 +413,7 @@ type (
 
 // GetOAuth 获取 OneDrive OAuth 地址
 func (service *GetOauthRedirectService) GetOAuth(c *gin.Context) (string, error) {
-	dep := dependency.FromContext(c)
-	storagePolicyClient := dep.StoragePolicyClient()
-
-	policy, err := storagePolicyClient.GetPolicyByID(c, service.ID)
-	if err != nil || policy.Type != types.PolicyTypeOd {
-		return "", serializer.NewError(serializer.CodePolicyNotExist, "", nil)
-	}
-
-	// Update to latest redirect url
-	policy.Settings.OauthRedirect = routes.MasterPolicyOAuthCallback(dep.SettingProvider().SiteURL(c)).String()
-	policy.SecretKey = service.Secret
-	policy.BucketName = service.AppID
-	policy, err = storagePolicyClient.Upsert(c, policy)
-	if err != nil {
-		return "", serializer.NewError(serializer.CodeDBError, "Failed to update policy", err)
-	}
-
-	client := onedrive.NewClient(policy, dep.RequestClient(), dep.CredManager(), dep.Logger(), dep.SettingProvider(), 0)
-	redirect := client.OAuthURL(context.Background(), []string{
-		"offline_access",
-		"files.readwrite.all",
-	})
-
-	return redirect, nil
+	return "", serializer.NewError(serializer.CodeParamErr, litePolicyTypeError, nil)
 }
 
 func GetPolicyOAuthURL(c *gin.Context) string {
@@ -434,28 +423,7 @@ func GetPolicyOAuthURL(c *gin.Context) string {
 
 // GetOauthCredentialStatus returns last refresh time of oauth credential
 func (service *SingleStoragePolicyService) GetOauthCredentialStatus(c *gin.Context) (*OauthCredentialStatus, error) {
-	dep := dependency.FromContext(c)
-	storagePolicyClient := dep.StoragePolicyClient()
-
-	policy, err := storagePolicyClient.GetPolicyByID(c, service.ID)
-	if err != nil || policy.Type != types.PolicyTypeOd {
-		return nil, serializer.NewError(serializer.CodePolicyNotExist, "", nil)
-	}
-
-	if policy.AccessKey == "" {
-		return &OauthCredentialStatus{Valid: false}, nil
-	}
-
-	token, err := dep.CredManager().Obtain(c, onedrive.CredentialKey(policy.ID))
-	if err != nil {
-		if errors.Is(err, credmanager.ErrNotFound) {
-			return &OauthCredentialStatus{Valid: false}, nil
-		}
-
-		return nil, serializer.NewError(serializer.CodeDBError, "Failed to get credential", err)
-	}
-
-	return &OauthCredentialStatus{Valid: true, LastRefreshTime: token.RefreshedAt()}, nil
+	return nil, serializer.NewError(serializer.CodeParamErr, litePolicyTypeError, nil)
 }
 
 type (
@@ -467,61 +435,9 @@ type (
 )
 
 func (service *FinishOauthCallbackService) Finish(c *gin.Context) error {
-	dep := dependency.FromContext(c)
-	storagePolicyClient := dep.StoragePolicyClient()
-
-	policyId, err := strconv.Atoi(service.State)
-	if err != nil {
-		return serializer.NewError(serializer.CodeParamErr, "Invalid state", err)
-	}
-
-	policy, err := storagePolicyClient.GetPolicyByID(c, policyId)
-	if err != nil {
-		return serializer.NewError(serializer.CodePolicyNotExist, "", nil)
-	}
-
-	if policy.Type != types.PolicyTypeOd {
-		return serializer.NewError(serializer.CodeParamErr, "Invalid policy type", nil)
-	}
-
-	client := onedrive.NewClient(policy, dep.RequestClient(), dep.CredManager(), dep.Logger(), dep.SettingProvider(), 0)
-	credential, err := client.ObtainToken(c, onedrive.WithCode(service.Code))
-	if err != nil {
-		return serializer.NewError(serializer.CodeParamErr, "Failed to obtain token: "+err.Error(), err)
-	}
-
-	credManager := dep.CredManager()
-	err = credManager.Upsert(c, credential)
-	if err != nil {
-		return serializer.NewError(serializer.CodeInternalSetting, "Failed to upsert credential", err)
-	}
-
-	_, err = credManager.Obtain(c, onedrive.CredentialKey(policy.ID))
-	if err != nil {
-		return serializer.NewError(serializer.CodeInternalSetting, "Failed to obtain credential", err)
-	}
-
-	return nil
+	return serializer.NewError(serializer.CodeParamErr, litePolicyTypeError, nil)
 }
 
 func (service *SingleStoragePolicyService) GetSharePointDriverRoot(c *gin.Context) (string, error) {
-	dep := dependency.FromContext(c)
-	storagePolicyClient := dep.StoragePolicyClient()
-
-	policy, err := storagePolicyClient.GetPolicyByID(c, service.ID)
-	if err != nil {
-		return "", serializer.NewError(serializer.CodePolicyNotExist, "", nil)
-	}
-
-	if policy.Type != types.PolicyTypeOd {
-		return "", serializer.NewError(serializer.CodeParamErr, "Invalid policy type", nil)
-	}
-
-	client := onedrive.NewClient(policy, dep.RequestClient(), dep.CredManager(), dep.Logger(), dep.SettingProvider(), 0)
-	root, err := client.GetSiteIDByURL(c, c.Query("url"))
-	if err != nil {
-		return "", serializer.NewError(serializer.CodeInternalSetting, "Failed to get site id", err)
-	}
-
-	return fmt.Sprintf("sites/%s/drive", root), nil
+	return "", serializer.NewError(serializer.CodeParamErr, litePolicyTypeError, nil)
 }

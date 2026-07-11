@@ -2,15 +2,13 @@ package controllers
 
 import (
 	"fmt"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/upyun"
+
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
-	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"github.com/cloudreve/Cloudreve/v4/service/callback"
 	"github.com/gin-gonic/gin"
-	"github.com/qiniu/go-sdk/v7/auth/qbox"
 )
 
 // RemoteCallback process callback request to complete upload
@@ -28,29 +26,6 @@ func ProcessCallback(failedStatusCode int, generalResp bool) gin.HandlerFunc {
 
 		c.JSON(200, serializer.Response{})
 	}
-}
-
-// QiniuCallbackAuth 七牛回调签名验证
-func QiniuCallbackValidate(c *gin.Context) {
-	session := c.MustGet(manager.UploadSessionCtx).(*fs.UploadSession)
-
-	// 验证回调是否来自qiniu
-	mac := qbox.NewMac(session.Policy.AccessKey, session.Policy.SecretKey)
-	ok, err := mac.VerifyCallback(c.Request)
-	if err != nil {
-		util.Log().Debug("Failed to verify callback request: %s", err)
-		c.JSON(401, serializer.GeneralUploadCallbackFailed{Error: "Failed to verify callback request."})
-		c.Abort()
-		return
-	}
-
-	if !ok {
-		c.JSON(401, serializer.GeneralUploadCallbackFailed{Error: "Invalid signature."})
-		c.Abort()
-		return
-	}
-
-	c.Next()
 }
 
 // OSSCallbackValidate 阿里云OSS上传回调
@@ -74,19 +49,6 @@ func OSSCallbackValidate(c *gin.Context) {
 		c.JSON(401, ErrorResponse(err))
 		c.Abort()
 	}
-}
-
-// UpyunCallbackAuth 又拍云回调签名验证
-func UpyunCallbackAuth(c *gin.Context) {
-	uploadSession := c.MustGet(manager.UploadSessionCtx).(*fs.UploadSession)
-	l := logging.FromContext(c)
-	if err := upyun.ValidateCallback(c, uploadSession); err != nil {
-		l.Error("Failed to verify callback request: %s", err)
-
-		c.JSON(401, serializer.GeneralUploadCallbackFailed{Error: "Failed to verify callback request."})
-	}
-
-	c.Next()
 }
 
 // OneDriveOAuth OneDrive 授权回调

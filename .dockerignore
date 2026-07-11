@@ -1,5 +1,6 @@
 .git
 .github
+.build
 .idea
 .vscode
 **/.git
@@ -12,4 +13,5 @@ dist
 release
 tmp
 *.db
+*.exe
 *.log

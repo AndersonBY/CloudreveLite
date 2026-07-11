@@ -2,39 +2,20 @@ package callback
 
 import (
 	"fmt"
+
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/onedrive"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/gin-gonic/gin"
 )
 
-// RemoteUploadCallbackService 远程存储上传回调请求服务
-type RemoteUploadCallbackService struct {
-}
-
-// UploadCallbackService OOS/七牛云存储上传回调请求服务
+// UploadCallbackService OSS upload callback request.
 type UploadCallbackService struct {
 	Name       string `json:"name"`
 	SourceName string `json:"source_name"`
 	PicInfo    string `json:"pic_info"`
 	Size       int64  `json:"size"`
-}
-
-// UpyunCallbackService 又拍云上传回调请求服务
-type UpyunCallbackService struct {
-	Code       int    `form:"code" binding:"required"`
-	Message    string `form:"message" binding:"required"`
-	SourceName string `form:"url" binding:"required"`
-	Width      string `form:"image-width"`
-	Height     string `form:"image-height"`
-	Size       uint64 `form:"file_size"`
-}
-
-// OneDriveCallback OneDrive 客户端回调正文
-type OneDriveCallback struct {
-	Meta *onedrive.FileInfo
 }
 
 // S3Callback S3 客户端回调正文

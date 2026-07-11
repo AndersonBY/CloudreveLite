@@ -1,8 +1,6 @@
 package dependency
 
 import (
-	"io/fs"
-
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth"
@@ -48,13 +46,6 @@ func WithConfigProvider(c conf.ConfigProvider) Option {
 	})
 }
 
-// WithStatics Set the default statics FS.
-func WithStatics(c fs.FS) Option {
-	return optionFunc(func(o *dependency) {
-		o.statics = c
-	})
-}
-
 // WithServerStaticFS Set the default statics FS for server.
 func WithServerStaticFS(c static.ServeFileSystem) Option {
 	return optionFunc(func(o *dependency) {
@@ -66,6 +57,13 @@ func WithServerStaticFS(c static.ServeFileSystem) Option {
 func WithProFlag(c bool) Option {
 	return optionFunc(func(o *dependency) {
 		o.isPro = c
+	})
+}
+
+// WithLiteMode sets whether feature restrictions for the Lite profile are active.
+func WithLiteMode(enabled bool) Option {
+	return optionFunc(func(o *dependency) {
+		o.liteMode = enabled
 	})
 }
 

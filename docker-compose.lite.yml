@@ -19,7 +19,6 @@ services:
       CR_CONF_Redis.Server: ""
       CR_CONF_System.Listen: :5212
       CR_CONF_System.Debug: "false"
-      CR_CONF_System.Pprof: ""
     volumes:
       - cloudreve_lite_data:/cloudreve/data
     read_only: true
