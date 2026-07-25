@@ -4,6 +4,7 @@ import (
 	"context"
 	rawsql "database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"time"
 
@@ -113,15 +114,15 @@ func NewRawEntClient(l logging.Logger, config conf.ConfigProvider) (*ent.Client,
 	}
 	// Set connection pool
 	db := client.DB()
-	db.SetMaxIdleConns(50)
-	if confDBType == "sqlite" || confDBType == "UNSET" {
+	if confDBType == conf.SQLiteDB {
+		db.SetMaxIdleConns(1)
 		db.SetMaxOpenConns(1)
+		db.SetConnMaxLifetime(0)
 	} else {
+		db.SetMaxIdleConns(50)
 		db.SetMaxOpenConns(100)
+		db.SetConnMaxLifetime(time.Second * 30)
 	}
-
-	// Set timeout
-	db.SetConnMaxLifetime(time.Second * 30)
 
 	driverOpt := ent.Driver(client)
 
@@ -141,19 +142,80 @@ type sqlite3Driver struct {
 }
 
 type sqlite3DriverConn interface {
-	Exec(string, []driver.Value) (driver.Result, error)
+	driver.Conn
+	driver.ConnBeginTx
+	driver.ConnPrepareContext
+	driver.Execer
+	driver.ExecerContext
+	driver.Queryer
+	driver.QueryerContext
+	driver.Pinger
+}
+
+type sqlite3Conn struct {
+	sqlite3DriverConn
+}
+
+type sqlite3Tx struct {
+	driver.Tx
+}
+
+func (c *sqlite3Conn) Begin() (driver.Tx, error) {
+	tx, err := c.sqlite3DriverConn.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	return &sqlite3Tx{Tx: tx}, nil
+}
+
+func (c *sqlite3Conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	tx, err := c.sqlite3DriverConn.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &sqlite3Tx{Tx: tx}, nil
+}
+
+func (t *sqlite3Tx) Commit() error {
+	err := t.Tx.Commit()
+	if err == nil {
+		return nil
+	}
+
+	// SQLite can leave the transaction active after a failed COMMIT. database/sql
+	// will not call Rollback afterwards, so clean the connection before it is pooled.
+	if rollbackErr := t.Tx.Rollback(); rollbackErr != nil {
+		return errors.Join(err, fmt.Errorf("failed to reset SQLite transaction: %w", rollbackErr), driver.ErrBadConn)
+	}
+
+	return err
 }
 
 func (d sqlite3Driver) Open(name string) (conn driver.Conn, err error) {
 	conn, err = d.Driver.Open(name)
 	if err != nil {
-		return
+		return nil, err
 	}
-	_, err = conn.(sqlite3DriverConn).Exec("PRAGMA foreign_keys = ON;", nil)
-	if err != nil {
+
+	sqliteConn, ok := conn.(sqlite3DriverConn)
+	if !ok {
 		_ = conn.Close()
+		return nil, fmt.Errorf("SQLite connection does not implement required driver interfaces")
 	}
-	return
+
+	for _, pragma := range []string{
+		"PRAGMA foreign_keys = ON;",
+		"PRAGMA busy_timeout = 5000;",
+	} {
+		if _, err := sqliteConn.Exec(pragma, nil); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("failed to configure SQLite connection: %w", err)
+		}
+	}
+
+	return &sqlite3Conn{sqlite3DriverConn: sqliteConn}, nil
 }
 
 func init() {
