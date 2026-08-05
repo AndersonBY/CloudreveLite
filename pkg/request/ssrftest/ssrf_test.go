@@ -59,6 +59,10 @@ func TestValidateExternalURL_IPLiterals(t *testing.T) {
 		"http://100.64.0.1/cgnat",
 		"http://[::ffff:127.0.0.1]/v4mapped",
 		"http://[::ffff:10.0.0.1]/v4mappedpriv",
+		"http://[64:ff9b::a9fe:a9fe]/nat64-metadata",
+		"http://[2002:a9fe:a9fe::]/6to4-metadata",
+		"http://[2001:0000:0000:0000:0000:0000:5601:5601]/teredo-metadata",
+		"http://[::a9fe:a9fe]/v4-compatible-metadata",
 		"http://224.0.0.1/multicast",
 	}
 	for _, raw := range cases {

@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile.lite
       args:
-        APP_VERSION: ${CLOUDREVE_LITE_VERSION:-4.17.0}
+        APP_VERSION: ${CLOUDREVE_LITE_VERSION:-4.18.0}
     restart: unless-stopped
     init: true
     ports:
