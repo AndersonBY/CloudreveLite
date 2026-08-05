@@ -256,7 +256,7 @@ func OSSCallbackAuth() gin.HandlerFunc {
 			request.WithLogger(logging.FromContext(c)),
 		))
 		if err != nil {
-			dep.Logger().Debug("Failed to verify callback request: %s", err)
+			dep.Logger().Warning("Failed to verify OSS callback request: %s", err)
 			c.JSON(401, serializer.GeneralUploadCallbackFailed{Error: "Failed to verify callback request."})
 			c.Abort()
 			return

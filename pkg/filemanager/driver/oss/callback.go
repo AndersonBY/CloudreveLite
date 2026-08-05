@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/md5"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -13,7 +14,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/request"
@@ -21,45 +21,79 @@ import (
 
 const (
 	pubKeyHeader      = "x-oss-pub-key-url"
-	pubKeyPrefix      = "http://gosspublic.alicdn.com/"
-	pubKeyPrefixHttps = "https://gosspublic.alicdn.com/"
-	pubKeyCacheKey    = "oss_public_key"
+	pubKeyHost        = "gosspublic.alicdn.com"
+	pubKeyCachePrefix = "oss_public_key:"
+	pubKeyCacheTTL    = 86400 * 7
 )
 
-// GetPublicKey 从回调请求或缓存中获取OSS的回调签名公钥
-func GetPublicKey(r *http.Request, kv cache.Driver, client request.Client) ([]byte, error) {
-	var pubKey []byte
-
-	// 尝试从缓存中获取
-	pub, exist := kv.Get(pubKeyCacheKey)
-	if exist {
-		return pub.([]byte), nil
+func getPublicKeyURL(r *http.Request) (string, error) {
+	encodedURL := r.Header.Get(pubKeyHeader)
+	if encodedURL == "" {
+		return "", errors.New("public key url missing")
 	}
 
-	// 从请求中获取
-	pubURL, err := base64.StdEncoding.DecodeString(r.Header.Get(pubKeyHeader))
+	decodedURL, err := base64.StdEncoding.DecodeString(encodedURL)
 	if err != nil {
-		return pubKey, err
+		return "", fmt.Errorf("decode public key url: %w", err)
 	}
 
-	// 确保这个 public key 是由 OSS 颁发的
-	if !strings.HasPrefix(string(pubURL), pubKeyPrefix) &&
-		!strings.HasPrefix(string(pubURL), pubKeyPrefixHttps) {
-		return pubKey, errors.New("public key url invalid")
+	pubURL, err := url.Parse(string(decodedURL))
+	if err != nil || pubURL.User != nil || pubURL.Fragment != "" || pubURL.Port() != "" ||
+		(pubURL.Scheme != "http" && pubURL.Scheme != "https") || pubURL.Hostname() != pubKeyHost {
+		return "", errors.New("public key url invalid")
 	}
 
-	// 获取公钥
-	body, err := client.Request("GET", string(pubURL), nil).
+	return pubURL.String(), nil
+}
+
+func publicKeyCacheKey(pubURL string) string {
+	digest := sha256.Sum256([]byte(pubURL))
+	return fmt.Sprintf("%s%x", pubKeyCachePrefix, digest)
+}
+
+func cachedPublicKey(value any) ([]byte, bool) {
+	switch key := value.(type) {
+	case []byte:
+		return key, true
+	case string:
+		return []byte(key), true
+	default:
+		return nil, false
+	}
+}
+
+func getPublicKey(r *http.Request, kv cache.Driver, client request.Client, forceRefresh bool) ([]byte, string, bool, error) {
+	pubURL, err := getPublicKeyURL(r)
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	cacheKey := publicKeyCacheKey(pubURL)
+	if !forceRefresh {
+		if value, exists := kv.Get(cacheKey); exists {
+			if pubKey, ok := cachedPublicKey(value); ok {
+				return pubKey, cacheKey, true, nil
+			}
+			_ = kv.Delete("", cacheKey)
+		}
+	}
+
+	body, err := client.Request("GET", pubURL, nil).
 		CheckHTTPResponse(200).
 		GetResponse()
 	if err != nil {
-		return pubKey, err
+		return nil, cacheKey, false, fmt.Errorf("fetch public key: %w", err)
 	}
 
-	// 写入缓存
-	_ = kv.Set(pubKeyCacheKey, []byte(body), 86400*7)
+	pubKey := []byte(body)
+	_ = kv.Set(cacheKey, pubKey, pubKeyCacheTTL)
+	return pubKey, cacheKey, false, nil
+}
 
-	return []byte(body), nil
+// GetPublicKey 从回调请求或缓存中获取OSS的回调签名公钥
+func GetPublicKey(r *http.Request, kv cache.Driver, client request.Client) ([]byte, error) {
+	pubKey, _, _, err := getPublicKey(r, kv, client, false)
+	return pubKey, err
 }
 
 func getRequestMD5(r *http.Request) ([]byte, error) {
@@ -86,37 +120,55 @@ func getRequestMD5(r *http.Request) ([]byte, error) {
 	return byteMD5, nil
 }
 
+func verifyCallbackSignature(bytePublicKey, byteMD5, authorization []byte) error {
+	pubBlock, _ := pem.Decode(bytePublicKey)
+	if pubBlock == nil {
+		return errors.New("public key PEM block missing")
+	}
+	pubInterface, err := x509.ParsePKIXPublicKey(pubBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse public key: %w", err)
+	}
+	pub, ok := pubInterface.(*rsa.PublicKey)
+	if !ok {
+		return errors.New("public key is not RSA")
+	}
+
+	return rsa.VerifyPKCS1v15(pub, crypto.MD5, byteMD5, authorization)
+}
+
 // VerifyCallbackSignature 验证OSS回调请求
 func VerifyCallbackSignature(r *http.Request, kv cache.Driver, client request.Client) error {
-	bytePublicKey, err := GetPublicKey(r, kv, client)
-	if err != nil {
-		return err
-	}
-
-	byteMD5, err := getRequestMD5(r)
-	if err != nil {
-		return err
-	}
-
 	strAuthorizationBase64 := r.Header.Get("authorization")
 	if strAuthorizationBase64 == "" {
 		return errors.New("no authorization field in Request header")
 	}
-	authorization, _ := base64.StdEncoding.DecodeString(strAuthorizationBase64)
-
-	pubBlock, _ := pem.Decode(bytePublicKey)
-	if pubBlock == nil {
-		return errors.New("pubBlock not exist")
+	authorization, err := base64.StdEncoding.DecodeString(strAuthorizationBase64)
+	if err != nil {
+		return fmt.Errorf("decode callback authorization: %w", err)
 	}
-	pubInterface, err := x509.ParsePKIXPublicKey(pubBlock.Bytes)
-	if (pubInterface == nil) || (err != nil) {
+
+	byteMD5, err := getRequestMD5(r)
+	if err != nil {
+		return fmt.Errorf("hash callback request: %w", err)
+	}
+
+	bytePublicKey, cacheKey, fromCache, err := getPublicKey(r, kv, client, false)
+	if err != nil {
 		return err
 	}
-	pub := pubInterface.(*rsa.PublicKey)
 
-	errorVerifyPKCS1v15 := rsa.VerifyPKCS1v15(pub, crypto.MD5, byteMD5, authorization)
-	if errorVerifyPKCS1v15 != nil {
-		return errorVerifyPKCS1v15
+	err = verifyCallbackSignature(bytePublicKey, byteMD5, authorization)
+	if errors.Is(err, rsa.ErrVerification) && fromCache {
+		_ = kv.Delete("", cacheKey)
+		bytePublicKey, _, _, refreshErr := getPublicKey(r, kv, client, true)
+		if refreshErr != nil {
+			return fmt.Errorf("refresh public key after signature failure: %w", refreshErr)
+		}
+		err = verifyCallbackSignature(bytePublicKey, byteMD5, authorization)
+	}
+	if err != nil {
+		return fmt.Errorf("verify callback signature: %w", err)
 	}
 
 	return nil
