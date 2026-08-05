@@ -84,8 +84,12 @@ func (f *DBFS) Lock(ctx context.Context, d time.Duration, requester *ent.User, z
 	if ancestor.Uri(false).IsSame(uri, hashid.EncodeUserID(f.hasher, f.user.ID)) {
 		t = ancestor.Type()
 	}
+	rootUri := ancestor.RootUri()
+	if rootUri == nil {
+		return nil, fs.ErrPathNotExist.WithError(fmt.Errorf("failed to resolve root URI for %q", uri.String()))
+	}
 	lr := &LockByPath{
-		Uri:             ancestor.RootUri().JoinRaw(uri.PathTrimmed()),
+		Uri:             rootUri.JoinRaw(uri.PathTrimmed()),
 		ClosestAncestor: ancestor,
 		Type:            t,
 		Token:           token,
@@ -322,7 +326,7 @@ func lockTupleFromUri(uri *fs.URI, u *ent.User, hasher hashid.Encoder) (string, 
 	if id == "" {
 		id = strconv.Itoa(u.ID)
 	}
-	ns := fmt.Sprintf(id + "/" + string(uri.FileSystem()))
+	ns := id + "/" + string(uri.FileSystem())
 	root := uri.Path()
 	return ns, root, ns + "/" + root
 }

@@ -243,9 +243,22 @@ func (f *File) Root() *File {
 	return root
 }
 
-// RootUri return the URI of the user root file under owner's view.
+// RootUri returns the root URI used to build root-relative paths.
 func (f *File) RootUri() *fs.URI {
-	return f.UserRoot().Uri(true)
+	if userRoot := f.UserRoot(); userRoot != nil {
+		return userRoot.Uri(true)
+	}
+
+	root := f.Root()
+	if root == nil {
+		return nil
+	}
+	rootUri := root.Uri(true)
+	if rootUri == nil {
+		return nil
+	}
+
+	return rootUri.Root()
 }
 
 func (f *File) Replace(model *ent.File) *File {
