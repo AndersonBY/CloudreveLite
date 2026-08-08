@@ -1,0 +1,162 @@
+name: Publish CloudreveLite CLI
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/cli-release.yml
+      - cmd/cloudreve-cli/**
+      - docs/CLI.md
+      - scripts/install-cli.ps1
+      - scripts/install-cli.sh
+      - go.mod
+      - go.sum
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag to upload assets to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-release-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_REF: ${{ github.event.release.tag_name || inputs.tag || github.sha }}
+  ASSET_VERSION: ${{ github.event.release.tag_name || inputs.tag || format('snapshot-{0}', github.run_number) }}
+
+jobs:
+  test:
+    name: Test CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run CLI tests
+        run: go test ./cmd/cloudreve-cli -count=1
+
+      - name: Check installer syntax
+        run: bash -n scripts/install-cli.sh
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build archive
+        id: package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse --short=12 HEAD)"
+          archive="cloudreve-cli_${GOOS}_${GOARCH}"
+          binary="cloudreve-cli"
+          if [[ "${GOOS}" == "windows" ]]; then
+            binary="${binary}.exe"
+          fi
+
+          mkdir -p dist/package
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X main.version=${ASSET_VERSION} -X main.commit=${commit}" \
+            -o "dist/package/${binary}" \
+            ./cmd/cloudreve-cli
+          cp LICENSE docs/CLI.md dist/package/
+
+          if [[ "${GOOS}" == "windows" ]]; then
+            (cd dist/package && zip -9 "../${archive}.zip" "${binary}" LICENSE CLI.md)
+            echo "asset=dist/${archive}.zip" >> "${GITHUB_OUTPUT}"
+          else
+            tar -C dist/package -czf "dist/${archive}.tar.gz" "${binary}" LICENSE CLI.md
+            echo "asset=dist/${archive}.tar.gz" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudreve-cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ steps.package.outputs.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Upload CLI assets to release
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cloudreve-cli-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          cp ../scripts/install-cli.ps1 ../scripts/install-cli.sh .
+          sha256sum cloudreve-cli_* install-cli.ps1 install-cli.sh > SHA256SUMS
+
+      - name: Upload assets to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${RELEASE_REF}" dist/* --clobber

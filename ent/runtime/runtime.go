@@ -5,6 +5,7 @@ package runtime
 import (
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/ent/apicredential"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -29,6 +30,33 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	apicredentialMixin := schema.APICredential{}.Mixin()
+	apicredentialMixinHooks0 := apicredentialMixin[0].Hooks()
+	apicredential.Hooks[0] = apicredentialMixinHooks0[0]
+	apicredentialMixinInters0 := apicredentialMixin[0].Interceptors()
+	apicredential.Interceptors[0] = apicredentialMixinInters0[0]
+	apicredentialMixinFields0 := apicredentialMixin[0].Fields()
+	_ = apicredentialMixinFields0
+	apicredentialFields := schema.APICredential{}.Fields()
+	_ = apicredentialFields
+	// apicredentialDescCreatedAt is the schema descriptor for created_at field.
+	apicredentialDescCreatedAt := apicredentialMixinFields0[0].Descriptor()
+	// apicredential.DefaultCreatedAt holds the default value on creation for the created_at field.
+	apicredential.DefaultCreatedAt = apicredentialDescCreatedAt.Default.(func() time.Time)
+	// apicredentialDescUpdatedAt is the schema descriptor for updated_at field.
+	apicredentialDescUpdatedAt := apicredentialMixinFields0[1].Descriptor()
+	// apicredential.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	apicredential.DefaultUpdatedAt = apicredentialDescUpdatedAt.Default.(func() time.Time)
+	// apicredential.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	apicredential.UpdateDefaultUpdatedAt = apicredentialDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// apicredentialDescName is the schema descriptor for name field.
+	apicredentialDescName := apicredentialFields[1].Descriptor()
+	// apicredential.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	apicredential.NameValidator = apicredentialDescName.Validators[0].(func(string) error)
+	// apicredentialDescPublicID is the schema descriptor for public_id field.
+	apicredentialDescPublicID := apicredentialFields[2].Descriptor()
+	// apicredential.PublicIDValidator is a validator for the "public_id" field. It is called by the builders before save.
+	apicredential.PublicIDValidator = apicredentialDescPublicID.Validators[0].(func(string) error)
 	davaccountMixin := schema.DavAccount{}.Mixin()
 	davaccountMixinHooks0 := davaccountMixin[0].Hooks()
 	davaccount.Hooks[0] = davaccountMixinHooks0[0]

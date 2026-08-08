@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/cloudreve/Cloudreve/v4/ent/apicredential"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -40,6 +41,8 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// APICredential is the client for interacting with the APICredential builders.
+	APICredential *APICredentialClient
 	// DavAccount is the client for interacting with the DavAccount builders.
 	DavAccount *DavAccountClient
 	// DirectLink is the client for interacting with the DirectLink builders.
@@ -83,6 +86,7 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.APICredential = NewAPICredentialClient(c.config)
 	c.DavAccount = NewDavAccountClient(c.config)
 	c.DirectLink = NewDirectLinkClient(c.config)
 	c.Entity = NewEntityClient(c.config)
@@ -191,6 +195,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:           ctx,
 		config:        cfg,
+		APICredential: NewAPICredentialClient(cfg),
 		DavAccount:    NewDavAccountClient(cfg),
 		DirectLink:    NewDirectLinkClient(cfg),
 		Entity:        NewEntityClient(cfg),
@@ -226,6 +231,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:           ctx,
 		config:        cfg,
+		APICredential: NewAPICredentialClient(cfg),
 		DavAccount:    NewDavAccountClient(cfg),
 		DirectLink:    NewDirectLinkClient(cfg),
 		Entity:        NewEntityClient(cfg),
@@ -248,7 +254,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		DavAccount.
+//		APICredential.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -271,9 +277,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group, c.Metadata,
-		c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
-		c.StoragePolicy, c.Task, c.User,
+		c.APICredential, c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent,
+		c.Group, c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting,
+		c.Share, c.StoragePolicy, c.Task, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -283,9 +289,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group, c.Metadata,
-		c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
-		c.StoragePolicy, c.Task, c.User,
+		c.APICredential, c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent,
+		c.Group, c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting,
+		c.Share, c.StoragePolicy, c.Task, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -294,6 +300,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *APICredentialMutation:
+		return c.APICredential.mutate(ctx, m)
 	case *DavAccountMutation:
 		return c.DavAccount.mutate(ctx, m)
 	case *DirectLinkMutation:
@@ -328,6 +336,157 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.User.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// APICredentialClient is a client for the APICredential schema.
+type APICredentialClient struct {
+	config
+}
+
+// NewAPICredentialClient returns a client for the APICredential from the given config.
+func NewAPICredentialClient(c config) *APICredentialClient {
+	return &APICredentialClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `apicredential.Hooks(f(g(h())))`.
+func (c *APICredentialClient) Use(hooks ...Hook) {
+	c.hooks.APICredential = append(c.hooks.APICredential, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `apicredential.Intercept(f(g(h())))`.
+func (c *APICredentialClient) Intercept(interceptors ...Interceptor) {
+	c.inters.APICredential = append(c.inters.APICredential, interceptors...)
+}
+
+// Create returns a builder for creating a APICredential entity.
+func (c *APICredentialClient) Create() *APICredentialCreate {
+	mutation := newAPICredentialMutation(c.config, OpCreate)
+	return &APICredentialCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of APICredential entities.
+func (c *APICredentialClient) CreateBulk(builders ...*APICredentialCreate) *APICredentialCreateBulk {
+	return &APICredentialCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *APICredentialClient) MapCreateBulk(slice any, setFunc func(*APICredentialCreate, int)) *APICredentialCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &APICredentialCreateBulk{err: fmt.Errorf("calling to APICredentialClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*APICredentialCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &APICredentialCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for APICredential.
+func (c *APICredentialClient) Update() *APICredentialUpdate {
+	mutation := newAPICredentialMutation(c.config, OpUpdate)
+	return &APICredentialUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *APICredentialClient) UpdateOne(ac *APICredential) *APICredentialUpdateOne {
+	mutation := newAPICredentialMutation(c.config, OpUpdateOne, withAPICredential(ac))
+	return &APICredentialUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *APICredentialClient) UpdateOneID(id int) *APICredentialUpdateOne {
+	mutation := newAPICredentialMutation(c.config, OpUpdateOne, withAPICredentialID(id))
+	return &APICredentialUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for APICredential.
+func (c *APICredentialClient) Delete() *APICredentialDelete {
+	mutation := newAPICredentialMutation(c.config, OpDelete)
+	return &APICredentialDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *APICredentialClient) DeleteOne(ac *APICredential) *APICredentialDeleteOne {
+	return c.DeleteOneID(ac.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *APICredentialClient) DeleteOneID(id int) *APICredentialDeleteOne {
+	builder := c.Delete().Where(apicredential.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &APICredentialDeleteOne{builder}
+}
+
+// Query returns a query builder for APICredential.
+func (c *APICredentialClient) Query() *APICredentialQuery {
+	return &APICredentialQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAPICredential},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a APICredential entity by its id.
+func (c *APICredentialClient) Get(ctx context.Context, id int) (*APICredential, error) {
+	return c.Query().Where(apicredential.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *APICredentialClient) GetX(ctx context.Context, id int) *APICredential {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a APICredential.
+func (c *APICredentialClient) QueryUser(ac *APICredential) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := ac.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apicredential.Table, apicredential.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, apicredential.UserTable, apicredential.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(ac.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *APICredentialClient) Hooks() []Hook {
+	hooks := c.hooks.APICredential
+	return append(hooks[:len(hooks):len(hooks)], apicredential.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *APICredentialClient) Interceptors() []Interceptor {
+	inters := c.inters.APICredential
+	return append(inters[:len(inters):len(inters)], apicredential.Interceptors[:]...)
+}
+
+func (c *APICredentialClient) mutate(ctx context.Context, m *APICredentialMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&APICredentialCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&APICredentialUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&APICredentialUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&APICredentialDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown APICredential mutation op: %q", m.Op())
 	}
 }
 
@@ -3071,6 +3230,22 @@ func (c *UserClient) QueryOauthGrants(u *User) *OAuthGrantQuery {
 	return query
 }
 
+// QueryAPICredentials queries the api_credentials edge of a User.
+func (c *UserClient) QueryAPICredentials(u *User) *APICredentialQuery {
+	query := (&APICredentialClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := u.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(apicredential.Table, apicredential.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.APICredentialsTable, user.APICredentialsColumn),
+		)
+		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UserClient) Hooks() []Hook {
 	hooks := c.hooks.User
@@ -3101,13 +3276,13 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
-		OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
+		APICredential, DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata,
+		Node, OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
 		User []ent.Hook
 	}
 	inters struct {
-		DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
-		OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
+		APICredential, DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata,
+		Node, OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
 		User []ent.Interceptor
 	}
 )

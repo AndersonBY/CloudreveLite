@@ -887,6 +887,29 @@ func HasOauthGrantsWith(preds ...predicate.OAuthGrant) predicate.User {
 	})
 }
 
+// HasAPICredentials applies the HasEdge predicate on the "api_credentials" edge.
+func HasAPICredentials() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, APICredentialsTable, APICredentialsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAPICredentialsWith applies the HasEdge predicate on the "api_credentials" edge with a given conditions (other predicates).
+func HasAPICredentialsWith(preds ...predicate.APICredential) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newAPICredentialsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.User) predicate.User {
 	return predicate.User(sql.AndPredicates(predicates...))

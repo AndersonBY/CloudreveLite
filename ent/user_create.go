@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/cloudreve/Cloudreve/v4/ent/apicredential"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
 	"github.com/cloudreve/Cloudreve/v4/ent/file"
@@ -297,6 +298,21 @@ func (uc *UserCreate) AddOauthGrants(o ...*OAuthGrant) *UserCreate {
 		ids[i] = o[i].ID
 	}
 	return uc.AddOauthGrantIDs(ids...)
+}
+
+// AddAPICredentialIDs adds the "api_credentials" edge to the APICredential entity by IDs.
+func (uc *UserCreate) AddAPICredentialIDs(ids ...int) *UserCreate {
+	uc.mutation.AddAPICredentialIDs(ids...)
+	return uc
+}
+
+// AddAPICredentials adds the "api_credentials" edges to the APICredential entity.
+func (uc *UserCreate) AddAPICredentials(a ...*APICredential) *UserCreate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uc.AddAPICredentialIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -622,6 +638,22 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(oauthgrant.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.APICredentialsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.APICredentialsTable,
+			Columns: []string{user.APICredentialsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apicredential.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

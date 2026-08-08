@@ -8,6 +8,48 @@ import (
 )
 
 var (
+	// APICredentialsColumns holds the columns for the "api_credentials" table.
+	APICredentialsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime"}},
+		{Name: "name", Type: field.TypeString, Size: 64},
+		{Name: "public_id", Type: field.TypeString, Unique: true, Size: 24},
+		{Name: "key_digest", Type: field.TypeBytes, Nullable: true},
+		{Name: "pairing_digest", Type: field.TypeBytes, Nullable: true},
+		{Name: "pairing_expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime"}},
+		{Name: "activated_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime"}},
+		{Name: "last_used_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime"}},
+		{Name: "expires_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime"}},
+		{Name: "user_id", Type: field.TypeInt},
+	}
+	// APICredentialsTable holds the schema information for the "api_credentials" table.
+	APICredentialsTable = &schema.Table{
+		Name:       "api_credentials",
+		Columns:    APICredentialsColumns,
+		PrimaryKey: []*schema.Column{APICredentialsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "api_credentials_users_api_credentials",
+				Columns:    []*schema.Column{APICredentialsColumns[12]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "apicredential_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{APICredentialsColumns[12]},
+			},
+			{
+				Name:    "apicredential_user_id_public_id",
+				Unique:  true,
+				Columns: []*schema.Column{APICredentialsColumns[12], APICredentialsColumns[5]},
+			},
+		},
+	}
 	// DavAccountsColumns holds the columns for the "dav_accounts" table.
 	DavAccountsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -528,6 +570,7 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		APICredentialsTable,
 		DavAccountsTable,
 		DirectLinksTable,
 		EntitiesTable,
@@ -549,6 +592,7 @@ var (
 )
 
 func init() {
+	APICredentialsTable.ForeignKeys[0].RefTable = UsersTable
 	DavAccountsTable.ForeignKeys[0].RefTable = UsersTable
 	DirectLinksTable.ForeignKeys[0].RefTable = FilesTable
 	EntitiesTable.ForeignKeys[0].RefTable = StoragePoliciesTable

@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/subtle"
 	"net/http"
+	"strings"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
@@ -14,6 +15,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/request"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
+	usersvc "github.com/cloudreve/Cloudreve/v4/service/user"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -49,6 +51,29 @@ func SignRequired(authInstance auth.Auth) gin.HandlerFunc {
 func CurrentUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		dep := dependency.FromContext(c)
+		authorization := c.GetHeader(auth.AuthorizationHeader)
+		if rawKey := strings.TrimPrefix(authorization, auth.TokenHeaderPrefix); usersvc.IsAPIKey(rawKey) {
+			uid, err := usersvc.AuthenticateAPIKey(c, dep.DBClient(), rawKey)
+			if err != nil {
+				c.JSON(200, serializer.ErrWithDetails(c, serializer.CodeCredentialInvalid, "Invalid or expired API key", nil))
+				c.Abort()
+				return
+			}
+			util.WithValue(c, inventory.UserIDCtx{}, uid)
+			util.WithValue(c, auth.ScopeContextKey{}, []string{
+				types.ScopeUserInfoRead,
+				types.ScopeFilesWrite,
+				types.ScopeSharesWrite,
+			})
+			if err := SetUserCtx(c, uid); err != nil {
+				c.JSON(200, serializer.Err(c, err))
+				c.Abort()
+				return
+			}
+			c.Next()
+			return
+		}
+
 		shouldContinue, err := dep.TokenAuth().VerifyAndRetrieveUser(c)
 		if err != nil {
 			c.JSON(200, serializer.Err(c, err))

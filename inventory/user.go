@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/ent"
+	"github.com/cloudreve/Cloudreve/v4/ent/apicredential"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/file"
 	"github.com/cloudreve/Cloudreve/v4/ent/oauthgrant"
@@ -213,6 +214,11 @@ func (c *userClient) MarkPasskeyUsed(ctx context.Context, uid int, keyId string)
 }
 
 func (c *userClient) Delete(ctx context.Context, uid int) error {
+	// API credentials
+	if _, err := c.client.APICredential.Delete().Where(apicredential.UserID(uid)).Exec(schema.SkipSoftDelete(ctx)); err != nil {
+		return fmt.Errorf("failed to delete API credentials: %w", err)
+	}
+
 	// Dav accounts
 	if _, err := c.client.DavAccount.Delete().Where(davaccount.OwnerID(uid)).Exec(schema.SkipSoftDelete(ctx)); err != nil {
 		return fmt.Errorf("failed to delete dav accounts: %w", err)

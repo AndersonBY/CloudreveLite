@@ -11,6 +11,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/cloudreve/Cloudreve/v4/ent/apicredential"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -43,6 +44,7 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
+	TypeAPICredential = "APICredential"
 	TypeDavAccount    = "DavAccount"
 	TypeDirectLink    = "DirectLink"
 	TypeEntity        = "Entity"
@@ -60,6 +62,1100 @@ const (
 	TypeTask          = "Task"
 	TypeUser          = "User"
 )
+
+// APICredentialMutation represents an operation that mutates the APICredential nodes in the graph.
+type APICredentialMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int
+	created_at         *time.Time
+	updated_at         *time.Time
+	deleted_at         *time.Time
+	name               *string
+	public_id          *string
+	key_digest         *[]byte
+	pairing_digest     *[]byte
+	pairing_expires_at *time.Time
+	activated_at       *time.Time
+	last_used_at       *time.Time
+	expires_at         *time.Time
+	clearedFields      map[string]struct{}
+	user               *int
+	cleareduser        bool
+	done               bool
+	oldValue           func(context.Context) (*APICredential, error)
+	predicates         []predicate.APICredential
+}
+
+var _ ent.Mutation = (*APICredentialMutation)(nil)
+
+// apicredentialOption allows management of the mutation configuration using functional options.
+type apicredentialOption func(*APICredentialMutation)
+
+// newAPICredentialMutation creates new mutation for the APICredential entity.
+func newAPICredentialMutation(c config, op Op, opts ...apicredentialOption) *APICredentialMutation {
+	m := &APICredentialMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAPICredential,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAPICredentialID sets the ID field of the mutation.
+func withAPICredentialID(id int) apicredentialOption {
+	return func(m *APICredentialMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *APICredential
+		)
+		m.oldValue = func(ctx context.Context) (*APICredential, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().APICredential.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAPICredential sets the old APICredential of the mutation.
+func withAPICredential(node *APICredential) apicredentialOption {
+	return func(m *APICredentialMutation) {
+		m.oldValue = func(context.Context) (*APICredential, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m APICredentialMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m APICredentialMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *APICredentialMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *APICredentialMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().APICredential.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *APICredentialMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *APICredentialMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *APICredentialMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *APICredentialMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *APICredentialMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *APICredentialMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *APICredentialMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *APICredentialMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *APICredentialMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[apicredential.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *APICredentialMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[apicredential.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *APICredentialMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, apicredential.FieldDeletedAt)
+}
+
+// SetUserID sets the "user_id" field.
+func (m *APICredentialMutation) SetUserID(i int) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *APICredentialMutation) UserID() (r int, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *APICredentialMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetName sets the "name" field.
+func (m *APICredentialMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *APICredentialMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *APICredentialMutation) ResetName() {
+	m.name = nil
+}
+
+// SetPublicID sets the "public_id" field.
+func (m *APICredentialMutation) SetPublicID(s string) {
+	m.public_id = &s
+}
+
+// PublicID returns the value of the "public_id" field in the mutation.
+func (m *APICredentialMutation) PublicID() (r string, exists bool) {
+	v := m.public_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicID returns the old "public_id" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldPublicID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicID: %w", err)
+	}
+	return oldValue.PublicID, nil
+}
+
+// ResetPublicID resets all changes to the "public_id" field.
+func (m *APICredentialMutation) ResetPublicID() {
+	m.public_id = nil
+}
+
+// SetKeyDigest sets the "key_digest" field.
+func (m *APICredentialMutation) SetKeyDigest(b []byte) {
+	m.key_digest = &b
+}
+
+// KeyDigest returns the value of the "key_digest" field in the mutation.
+func (m *APICredentialMutation) KeyDigest() (r []byte, exists bool) {
+	v := m.key_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKeyDigest returns the old "key_digest" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldKeyDigest(ctx context.Context) (v []byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKeyDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKeyDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKeyDigest: %w", err)
+	}
+	return oldValue.KeyDigest, nil
+}
+
+// ClearKeyDigest clears the value of the "key_digest" field.
+func (m *APICredentialMutation) ClearKeyDigest() {
+	m.key_digest = nil
+	m.clearedFields[apicredential.FieldKeyDigest] = struct{}{}
+}
+
+// KeyDigestCleared returns if the "key_digest" field was cleared in this mutation.
+func (m *APICredentialMutation) KeyDigestCleared() bool {
+	_, ok := m.clearedFields[apicredential.FieldKeyDigest]
+	return ok
+}
+
+// ResetKeyDigest resets all changes to the "key_digest" field.
+func (m *APICredentialMutation) ResetKeyDigest() {
+	m.key_digest = nil
+	delete(m.clearedFields, apicredential.FieldKeyDigest)
+}
+
+// SetPairingDigest sets the "pairing_digest" field.
+func (m *APICredentialMutation) SetPairingDigest(b []byte) {
+	m.pairing_digest = &b
+}
+
+// PairingDigest returns the value of the "pairing_digest" field in the mutation.
+func (m *APICredentialMutation) PairingDigest() (r []byte, exists bool) {
+	v := m.pairing_digest
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPairingDigest returns the old "pairing_digest" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldPairingDigest(ctx context.Context) (v []byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPairingDigest is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPairingDigest requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPairingDigest: %w", err)
+	}
+	return oldValue.PairingDigest, nil
+}
+
+// ClearPairingDigest clears the value of the "pairing_digest" field.
+func (m *APICredentialMutation) ClearPairingDigest() {
+	m.pairing_digest = nil
+	m.clearedFields[apicredential.FieldPairingDigest] = struct{}{}
+}
+
+// PairingDigestCleared returns if the "pairing_digest" field was cleared in this mutation.
+func (m *APICredentialMutation) PairingDigestCleared() bool {
+	_, ok := m.clearedFields[apicredential.FieldPairingDigest]
+	return ok
+}
+
+// ResetPairingDigest resets all changes to the "pairing_digest" field.
+func (m *APICredentialMutation) ResetPairingDigest() {
+	m.pairing_digest = nil
+	delete(m.clearedFields, apicredential.FieldPairingDigest)
+}
+
+// SetPairingExpiresAt sets the "pairing_expires_at" field.
+func (m *APICredentialMutation) SetPairingExpiresAt(t time.Time) {
+	m.pairing_expires_at = &t
+}
+
+// PairingExpiresAt returns the value of the "pairing_expires_at" field in the mutation.
+func (m *APICredentialMutation) PairingExpiresAt() (r time.Time, exists bool) {
+	v := m.pairing_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPairingExpiresAt returns the old "pairing_expires_at" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldPairingExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPairingExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPairingExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPairingExpiresAt: %w", err)
+	}
+	return oldValue.PairingExpiresAt, nil
+}
+
+// ClearPairingExpiresAt clears the value of the "pairing_expires_at" field.
+func (m *APICredentialMutation) ClearPairingExpiresAt() {
+	m.pairing_expires_at = nil
+	m.clearedFields[apicredential.FieldPairingExpiresAt] = struct{}{}
+}
+
+// PairingExpiresAtCleared returns if the "pairing_expires_at" field was cleared in this mutation.
+func (m *APICredentialMutation) PairingExpiresAtCleared() bool {
+	_, ok := m.clearedFields[apicredential.FieldPairingExpiresAt]
+	return ok
+}
+
+// ResetPairingExpiresAt resets all changes to the "pairing_expires_at" field.
+func (m *APICredentialMutation) ResetPairingExpiresAt() {
+	m.pairing_expires_at = nil
+	delete(m.clearedFields, apicredential.FieldPairingExpiresAt)
+}
+
+// SetActivatedAt sets the "activated_at" field.
+func (m *APICredentialMutation) SetActivatedAt(t time.Time) {
+	m.activated_at = &t
+}
+
+// ActivatedAt returns the value of the "activated_at" field in the mutation.
+func (m *APICredentialMutation) ActivatedAt() (r time.Time, exists bool) {
+	v := m.activated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActivatedAt returns the old "activated_at" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldActivatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActivatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActivatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActivatedAt: %w", err)
+	}
+	return oldValue.ActivatedAt, nil
+}
+
+// ClearActivatedAt clears the value of the "activated_at" field.
+func (m *APICredentialMutation) ClearActivatedAt() {
+	m.activated_at = nil
+	m.clearedFields[apicredential.FieldActivatedAt] = struct{}{}
+}
+
+// ActivatedAtCleared returns if the "activated_at" field was cleared in this mutation.
+func (m *APICredentialMutation) ActivatedAtCleared() bool {
+	_, ok := m.clearedFields[apicredential.FieldActivatedAt]
+	return ok
+}
+
+// ResetActivatedAt resets all changes to the "activated_at" field.
+func (m *APICredentialMutation) ResetActivatedAt() {
+	m.activated_at = nil
+	delete(m.clearedFields, apicredential.FieldActivatedAt)
+}
+
+// SetLastUsedAt sets the "last_used_at" field.
+func (m *APICredentialMutation) SetLastUsedAt(t time.Time) {
+	m.last_used_at = &t
+}
+
+// LastUsedAt returns the value of the "last_used_at" field in the mutation.
+func (m *APICredentialMutation) LastUsedAt() (r time.Time, exists bool) {
+	v := m.last_used_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastUsedAt returns the old "last_used_at" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldLastUsedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastUsedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastUsedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastUsedAt: %w", err)
+	}
+	return oldValue.LastUsedAt, nil
+}
+
+// ClearLastUsedAt clears the value of the "last_used_at" field.
+func (m *APICredentialMutation) ClearLastUsedAt() {
+	m.last_used_at = nil
+	m.clearedFields[apicredential.FieldLastUsedAt] = struct{}{}
+}
+
+// LastUsedAtCleared returns if the "last_used_at" field was cleared in this mutation.
+func (m *APICredentialMutation) LastUsedAtCleared() bool {
+	_, ok := m.clearedFields[apicredential.FieldLastUsedAt]
+	return ok
+}
+
+// ResetLastUsedAt resets all changes to the "last_used_at" field.
+func (m *APICredentialMutation) ResetLastUsedAt() {
+	m.last_used_at = nil
+	delete(m.clearedFields, apicredential.FieldLastUsedAt)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *APICredentialMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *APICredentialMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the APICredential entity.
+// If the APICredential object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APICredentialMutation) OldExpiresAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *APICredentialMutation) ResetExpiresAt() {
+	m.expires_at = nil
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *APICredentialMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[apicredential.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *APICredentialMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *APICredentialMutation) UserIDs() (ids []int) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *APICredentialMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// Where appends a list predicates to the APICredentialMutation builder.
+func (m *APICredentialMutation) Where(ps ...predicate.APICredential) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the APICredentialMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *APICredentialMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.APICredential, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *APICredentialMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *APICredentialMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (APICredential).
+func (m *APICredentialMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *APICredentialMutation) Fields() []string {
+	fields := make([]string, 0, 12)
+	if m.created_at != nil {
+		fields = append(fields, apicredential.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, apicredential.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, apicredential.FieldDeletedAt)
+	}
+	if m.user != nil {
+		fields = append(fields, apicredential.FieldUserID)
+	}
+	if m.name != nil {
+		fields = append(fields, apicredential.FieldName)
+	}
+	if m.public_id != nil {
+		fields = append(fields, apicredential.FieldPublicID)
+	}
+	if m.key_digest != nil {
+		fields = append(fields, apicredential.FieldKeyDigest)
+	}
+	if m.pairing_digest != nil {
+		fields = append(fields, apicredential.FieldPairingDigest)
+	}
+	if m.pairing_expires_at != nil {
+		fields = append(fields, apicredential.FieldPairingExpiresAt)
+	}
+	if m.activated_at != nil {
+		fields = append(fields, apicredential.FieldActivatedAt)
+	}
+	if m.last_used_at != nil {
+		fields = append(fields, apicredential.FieldLastUsedAt)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, apicredential.FieldExpiresAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *APICredentialMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case apicredential.FieldCreatedAt:
+		return m.CreatedAt()
+	case apicredential.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case apicredential.FieldDeletedAt:
+		return m.DeletedAt()
+	case apicredential.FieldUserID:
+		return m.UserID()
+	case apicredential.FieldName:
+		return m.Name()
+	case apicredential.FieldPublicID:
+		return m.PublicID()
+	case apicredential.FieldKeyDigest:
+		return m.KeyDigest()
+	case apicredential.FieldPairingDigest:
+		return m.PairingDigest()
+	case apicredential.FieldPairingExpiresAt:
+		return m.PairingExpiresAt()
+	case apicredential.FieldActivatedAt:
+		return m.ActivatedAt()
+	case apicredential.FieldLastUsedAt:
+		return m.LastUsedAt()
+	case apicredential.FieldExpiresAt:
+		return m.ExpiresAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *APICredentialMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case apicredential.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case apicredential.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case apicredential.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case apicredential.FieldUserID:
+		return m.OldUserID(ctx)
+	case apicredential.FieldName:
+		return m.OldName(ctx)
+	case apicredential.FieldPublicID:
+		return m.OldPublicID(ctx)
+	case apicredential.FieldKeyDigest:
+		return m.OldKeyDigest(ctx)
+	case apicredential.FieldPairingDigest:
+		return m.OldPairingDigest(ctx)
+	case apicredential.FieldPairingExpiresAt:
+		return m.OldPairingExpiresAt(ctx)
+	case apicredential.FieldActivatedAt:
+		return m.OldActivatedAt(ctx)
+	case apicredential.FieldLastUsedAt:
+		return m.OldLastUsedAt(ctx)
+	case apicredential.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown APICredential field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *APICredentialMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case apicredential.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case apicredential.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case apicredential.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case apicredential.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case apicredential.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case apicredential.FieldPublicID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicID(v)
+		return nil
+	case apicredential.FieldKeyDigest:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKeyDigest(v)
+		return nil
+	case apicredential.FieldPairingDigest:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPairingDigest(v)
+		return nil
+	case apicredential.FieldPairingExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPairingExpiresAt(v)
+		return nil
+	case apicredential.FieldActivatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActivatedAt(v)
+		return nil
+	case apicredential.FieldLastUsedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastUsedAt(v)
+		return nil
+	case apicredential.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown APICredential field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *APICredentialMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *APICredentialMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *APICredentialMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown APICredential numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *APICredentialMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(apicredential.FieldDeletedAt) {
+		fields = append(fields, apicredential.FieldDeletedAt)
+	}
+	if m.FieldCleared(apicredential.FieldKeyDigest) {
+		fields = append(fields, apicredential.FieldKeyDigest)
+	}
+	if m.FieldCleared(apicredential.FieldPairingDigest) {
+		fields = append(fields, apicredential.FieldPairingDigest)
+	}
+	if m.FieldCleared(apicredential.FieldPairingExpiresAt) {
+		fields = append(fields, apicredential.FieldPairingExpiresAt)
+	}
+	if m.FieldCleared(apicredential.FieldActivatedAt) {
+		fields = append(fields, apicredential.FieldActivatedAt)
+	}
+	if m.FieldCleared(apicredential.FieldLastUsedAt) {
+		fields = append(fields, apicredential.FieldLastUsedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *APICredentialMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *APICredentialMutation) ClearField(name string) error {
+	switch name {
+	case apicredential.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	case apicredential.FieldKeyDigest:
+		m.ClearKeyDigest()
+		return nil
+	case apicredential.FieldPairingDigest:
+		m.ClearPairingDigest()
+		return nil
+	case apicredential.FieldPairingExpiresAt:
+		m.ClearPairingExpiresAt()
+		return nil
+	case apicredential.FieldActivatedAt:
+		m.ClearActivatedAt()
+		return nil
+	case apicredential.FieldLastUsedAt:
+		m.ClearLastUsedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown APICredential nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *APICredentialMutation) ResetField(name string) error {
+	switch name {
+	case apicredential.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case apicredential.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case apicredential.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case apicredential.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case apicredential.FieldName:
+		m.ResetName()
+		return nil
+	case apicredential.FieldPublicID:
+		m.ResetPublicID()
+		return nil
+	case apicredential.FieldKeyDigest:
+		m.ResetKeyDigest()
+		return nil
+	case apicredential.FieldPairingDigest:
+		m.ResetPairingDigest()
+		return nil
+	case apicredential.FieldPairingExpiresAt:
+		m.ResetPairingExpiresAt()
+		return nil
+	case apicredential.FieldActivatedAt:
+		m.ResetActivatedAt()
+		return nil
+	case apicredential.FieldLastUsedAt:
+		m.ResetLastUsedAt()
+		return nil
+	case apicredential.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	}
+	return fmt.Errorf("unknown APICredential field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *APICredentialMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.user != nil {
+		edges = append(edges, apicredential.EdgeUser)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *APICredentialMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case apicredential.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *APICredentialMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *APICredentialMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *APICredentialMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.cleareduser {
+		edges = append(edges, apicredential.EdgeUser)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *APICredentialMutation) EdgeCleared(name string) bool {
+	switch name {
+	case apicredential.EdgeUser:
+		return m.cleareduser
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *APICredentialMutation) ClearEdge(name string) error {
+	switch name {
+	case apicredential.EdgeUser:
+		m.ClearUser()
+		return nil
+	}
+	return fmt.Errorf("unknown APICredential unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *APICredentialMutation) ResetEdge(name string) error {
+	switch name {
+	case apicredential.EdgeUser:
+		m.ResetUser()
+		return nil
+	}
+	return fmt.Errorf("unknown APICredential edge %s", name)
+}
 
 // DavAccountMutation represents an operation that mutates the DavAccount nodes in the graph.
 type DavAccountMutation struct {
@@ -15054,51 +16150,54 @@ func (m *TaskMutation) ResetEdge(name string) error {
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	created_at          *time.Time
-	updated_at          *time.Time
-	deleted_at          *time.Time
-	email               *string
-	nick                *string
-	password            *string
-	status              *user.Status
-	storage             *int64
-	addstorage          *int64
-	two_factor_secret   *string
-	avatar              *string
-	settings            **types.UserSetting
-	clearedFields       map[string]struct{}
-	group               *int
-	clearedgroup        bool
-	files               map[int]struct{}
-	removedfiles        map[int]struct{}
-	clearedfiles        bool
-	dav_accounts        map[int]struct{}
-	removeddav_accounts map[int]struct{}
-	cleareddav_accounts bool
-	shares              map[int]struct{}
-	removedshares       map[int]struct{}
-	clearedshares       bool
-	passkey             map[int]struct{}
-	removedpasskey      map[int]struct{}
-	clearedpasskey      bool
-	tasks               map[int]struct{}
-	removedtasks        map[int]struct{}
-	clearedtasks        bool
-	fsevents            map[int]struct{}
-	removedfsevents     map[int]struct{}
-	clearedfsevents     bool
-	entities            map[int]struct{}
-	removedentities     map[int]struct{}
-	clearedentities     bool
-	oauth_grants        map[int]struct{}
-	removedoauth_grants map[int]struct{}
-	clearedoauth_grants bool
-	done                bool
-	oldValue            func(context.Context) (*User, error)
-	predicates          []predicate.User
+	op                     Op
+	typ                    string
+	id                     *int
+	created_at             *time.Time
+	updated_at             *time.Time
+	deleted_at             *time.Time
+	email                  *string
+	nick                   *string
+	password               *string
+	status                 *user.Status
+	storage                *int64
+	addstorage             *int64
+	two_factor_secret      *string
+	avatar                 *string
+	settings               **types.UserSetting
+	clearedFields          map[string]struct{}
+	group                  *int
+	clearedgroup           bool
+	files                  map[int]struct{}
+	removedfiles           map[int]struct{}
+	clearedfiles           bool
+	dav_accounts           map[int]struct{}
+	removeddav_accounts    map[int]struct{}
+	cleareddav_accounts    bool
+	shares                 map[int]struct{}
+	removedshares          map[int]struct{}
+	clearedshares          bool
+	passkey                map[int]struct{}
+	removedpasskey         map[int]struct{}
+	clearedpasskey         bool
+	tasks                  map[int]struct{}
+	removedtasks           map[int]struct{}
+	clearedtasks           bool
+	fsevents               map[int]struct{}
+	removedfsevents        map[int]struct{}
+	clearedfsevents        bool
+	entities               map[int]struct{}
+	removedentities        map[int]struct{}
+	clearedentities        bool
+	oauth_grants           map[int]struct{}
+	removedoauth_grants    map[int]struct{}
+	clearedoauth_grants    bool
+	api_credentials        map[int]struct{}
+	removedapi_credentials map[int]struct{}
+	clearedapi_credentials bool
+	done                   bool
+	oldValue               func(context.Context) (*User, error)
+	predicates             []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -16188,6 +17287,60 @@ func (m *UserMutation) ResetOauthGrants() {
 	m.removedoauth_grants = nil
 }
 
+// AddAPICredentialIDs adds the "api_credentials" edge to the APICredential entity by ids.
+func (m *UserMutation) AddAPICredentialIDs(ids ...int) {
+	if m.api_credentials == nil {
+		m.api_credentials = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.api_credentials[ids[i]] = struct{}{}
+	}
+}
+
+// ClearAPICredentials clears the "api_credentials" edge to the APICredential entity.
+func (m *UserMutation) ClearAPICredentials() {
+	m.clearedapi_credentials = true
+}
+
+// APICredentialsCleared reports if the "api_credentials" edge to the APICredential entity was cleared.
+func (m *UserMutation) APICredentialsCleared() bool {
+	return m.clearedapi_credentials
+}
+
+// RemoveAPICredentialIDs removes the "api_credentials" edge to the APICredential entity by IDs.
+func (m *UserMutation) RemoveAPICredentialIDs(ids ...int) {
+	if m.removedapi_credentials == nil {
+		m.removedapi_credentials = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.api_credentials, ids[i])
+		m.removedapi_credentials[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedAPICredentials returns the removed IDs of the "api_credentials" edge to the APICredential entity.
+func (m *UserMutation) RemovedAPICredentialsIDs() (ids []int) {
+	for id := range m.removedapi_credentials {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// APICredentialsIDs returns the "api_credentials" edge IDs in the mutation.
+func (m *UserMutation) APICredentialsIDs() (ids []int) {
+	for id := range m.api_credentials {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetAPICredentials resets all changes to the "api_credentials" edge.
+func (m *UserMutation) ResetAPICredentials() {
+	m.api_credentials = nil
+	m.clearedapi_credentials = false
+	m.removedapi_credentials = nil
+}
+
 // Where appends a list predicates to the UserMutation builder.
 func (m *UserMutation) Where(ps ...predicate.User) {
 	m.predicates = append(m.predicates, ps...)
@@ -16556,7 +17709,7 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 9)
+	edges := make([]string, 0, 10)
 	if m.group != nil {
 		edges = append(edges, user.EdgeGroup)
 	}
@@ -16583,6 +17736,9 @@ func (m *UserMutation) AddedEdges() []string {
 	}
 	if m.oauth_grants != nil {
 		edges = append(edges, user.EdgeOauthGrants)
+	}
+	if m.api_credentials != nil {
+		edges = append(edges, user.EdgeAPICredentials)
 	}
 	return edges
 }
@@ -16643,13 +17799,19 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeAPICredentials:
+		ids := make([]ent.Value, 0, len(m.api_credentials))
+		for id := range m.api_credentials {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 9)
+	edges := make([]string, 0, 10)
 	if m.removedfiles != nil {
 		edges = append(edges, user.EdgeFiles)
 	}
@@ -16673,6 +17835,9 @@ func (m *UserMutation) RemovedEdges() []string {
 	}
 	if m.removedoauth_grants != nil {
 		edges = append(edges, user.EdgeOauthGrants)
+	}
+	if m.removedapi_credentials != nil {
+		edges = append(edges, user.EdgeAPICredentials)
 	}
 	return edges
 }
@@ -16729,13 +17894,19 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeAPICredentials:
+		ids := make([]ent.Value, 0, len(m.removedapi_credentials))
+		for id := range m.removedapi_credentials {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 9)
+	edges := make([]string, 0, 10)
 	if m.clearedgroup {
 		edges = append(edges, user.EdgeGroup)
 	}
@@ -16763,6 +17934,9 @@ func (m *UserMutation) ClearedEdges() []string {
 	if m.clearedoauth_grants {
 		edges = append(edges, user.EdgeOauthGrants)
 	}
+	if m.clearedapi_credentials {
+		edges = append(edges, user.EdgeAPICredentials)
+	}
 	return edges
 }
 
@@ -16788,6 +17962,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedentities
 	case user.EdgeOauthGrants:
 		return m.clearedoauth_grants
+	case user.EdgeAPICredentials:
+		return m.clearedapi_credentials
 	}
 	return false
 }
@@ -16833,6 +18009,9 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgeOauthGrants:
 		m.ResetOauthGrants()
+		return nil
+	case user.EdgeAPICredentials:
+		m.ResetAPICredentials()
 		return nil
 	}
 	return fmt.Errorf("unknown User edge %s", name)

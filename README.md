@@ -2,6 +2,8 @@
 
 CloudreveLite is a resource-conscious fork of Cloudreve for private, temporary file sharing backed by Aliyun OSS or S3-compatible object storage. It uses one process, SQLite, in-memory caching, read-only disk-backed frontend assets, and only the cleanup queue required by expiring files.
 
+AI agents and scripts can connect through a one-time web pairing command and use the JSON-first [`cloudreve-cli`](docs/CLI.md) with revocable API keys for direct OSS/S3 upload, download, and temporary share management.
+
 WebDAV, permanent direct links, OAuth/passkeys, archives, media analysis, remote downloads, and remote nodes have been removed from routes and frontend entry points. Storage policies are restricted to Aliyun OSS and generic S3. See [the Lite deployment guide](docs/LITE.md) for the exact scope and deployment instructions.
 
 [中文版本](README_zh-CN.md)

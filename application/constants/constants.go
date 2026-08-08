@@ -5,6 +5,10 @@ package constants
 // BackendVersion 当前后端版本号
 var BackendVersion = "4.14.0"
 
+// LiteSchemaRevision forces a one-time schema migration for Lite-only tables
+// even when a deployment reuses the same upstream application version.
+const LiteSchemaRevision = "+lite-api-keys.1"
+
 // IsPro 是否为Pro版本
 var IsPro = "false"
 

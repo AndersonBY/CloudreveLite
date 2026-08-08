@@ -139,6 +139,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.FromQuery[usersvc.PrepareLoginService](usersvc.PrepareLoginParameterCtx{}),
 				controllers.UserPrepareLogin,
 			)
+			session.POST("api-key/exchange", controllers.UserExchangeCLIPairingCode)
 
 		}
 
@@ -668,6 +669,13 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				user.GET("me", middleware.RequiredScopes(types.ScopeUserInfoRead), controllers.UserMe)
 				// 存储信息
 				user.GET("capacity", middleware.RequiredScopes(types.ScopeUserInfoRead), controllers.UserStorage)
+				apiKeys := user.Group("api-keys")
+				{
+					apiKeys.GET("", middleware.RequiredScopes(types.ScopeUserSecurityInfoRead), controllers.UserListAPIKeys)
+					apiKeys.POST("", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite), controllers.UserCreateAPIKey)
+					apiKeys.POST("pairing", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite), controllers.UserCreateCLIPairingCode)
+					apiKeys.DELETE(":id", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite), controllers.UserRevokeAPIKey)
+				}
 				// Search user by keywords
 				user.GET("search",
 					middleware.RequiredScopes(types.ScopeUserInfoRead),

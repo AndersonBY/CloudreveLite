@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/cloudreve/Cloudreve/v4/ent/apicredential"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
 	"github.com/cloudreve/Cloudreve/v4/ent/file"
@@ -344,6 +345,21 @@ func (uu *UserUpdate) AddOauthGrants(o ...*OAuthGrant) *UserUpdate {
 	return uu.AddOauthGrantIDs(ids...)
 }
 
+// AddAPICredentialIDs adds the "api_credentials" edge to the APICredential entity by IDs.
+func (uu *UserUpdate) AddAPICredentialIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddAPICredentialIDs(ids...)
+	return uu
+}
+
+// AddAPICredentials adds the "api_credentials" edges to the APICredential entity.
+func (uu *UserUpdate) AddAPICredentials(a ...*APICredential) *UserUpdate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uu.AddAPICredentialIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uu *UserUpdate) Mutation() *UserMutation {
 	return uu.mutation
@@ -521,6 +537,27 @@ func (uu *UserUpdate) RemoveOauthGrants(o ...*OAuthGrant) *UserUpdate {
 		ids[i] = o[i].ID
 	}
 	return uu.RemoveOauthGrantIDs(ids...)
+}
+
+// ClearAPICredentials clears all "api_credentials" edges to the APICredential entity.
+func (uu *UserUpdate) ClearAPICredentials() *UserUpdate {
+	uu.mutation.ClearAPICredentials()
+	return uu
+}
+
+// RemoveAPICredentialIDs removes the "api_credentials" edge to APICredential entities by IDs.
+func (uu *UserUpdate) RemoveAPICredentialIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveAPICredentialIDs(ids...)
+	return uu
+}
+
+// RemoveAPICredentials removes "api_credentials" edges to APICredential entities.
+func (uu *UserUpdate) RemoveAPICredentials(a ...*APICredential) *UserUpdate {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uu.RemoveAPICredentialIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1037,6 +1074,51 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if uu.mutation.APICredentialsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.APICredentialsTable,
+			Columns: []string{user.APICredentialsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apicredential.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedAPICredentialsIDs(); len(nodes) > 0 && !uu.mutation.APICredentialsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.APICredentialsTable,
+			Columns: []string{user.APICredentialsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apicredential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.APICredentialsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.APICredentialsTable,
+			Columns: []string{user.APICredentialsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apicredential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if n, err = sqlgraph.UpdateNodes(ctx, uu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -1363,6 +1445,21 @@ func (uuo *UserUpdateOne) AddOauthGrants(o ...*OAuthGrant) *UserUpdateOne {
 	return uuo.AddOauthGrantIDs(ids...)
 }
 
+// AddAPICredentialIDs adds the "api_credentials" edge to the APICredential entity by IDs.
+func (uuo *UserUpdateOne) AddAPICredentialIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddAPICredentialIDs(ids...)
+	return uuo
+}
+
+// AddAPICredentials adds the "api_credentials" edges to the APICredential entity.
+func (uuo *UserUpdateOne) AddAPICredentials(a ...*APICredential) *UserUpdateOne {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uuo.AddAPICredentialIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uuo *UserUpdateOne) Mutation() *UserMutation {
 	return uuo.mutation
@@ -1540,6 +1637,27 @@ func (uuo *UserUpdateOne) RemoveOauthGrants(o ...*OAuthGrant) *UserUpdateOne {
 		ids[i] = o[i].ID
 	}
 	return uuo.RemoveOauthGrantIDs(ids...)
+}
+
+// ClearAPICredentials clears all "api_credentials" edges to the APICredential entity.
+func (uuo *UserUpdateOne) ClearAPICredentials() *UserUpdateOne {
+	uuo.mutation.ClearAPICredentials()
+	return uuo
+}
+
+// RemoveAPICredentialIDs removes the "api_credentials" edge to APICredential entities by IDs.
+func (uuo *UserUpdateOne) RemoveAPICredentialIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveAPICredentialIDs(ids...)
+	return uuo
+}
+
+// RemoveAPICredentials removes "api_credentials" edges to APICredential entities.
+func (uuo *UserUpdateOne) RemoveAPICredentials(a ...*APICredential) *UserUpdateOne {
+	ids := make([]int, len(a))
+	for i := range a {
+		ids[i] = a[i].ID
+	}
+	return uuo.RemoveAPICredentialIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -2079,6 +2197,51 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(oauthgrant.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.APICredentialsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.APICredentialsTable,
+			Columns: []string{user.APICredentialsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apicredential.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedAPICredentialsIDs(); len(nodes) > 0 && !uuo.mutation.APICredentialsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.APICredentialsTable,
+			Columns: []string{user.APICredentialsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apicredential.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.APICredentialsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.APICredentialsTable,
+			Columns: []string{user.APICredentialsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(apicredential.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

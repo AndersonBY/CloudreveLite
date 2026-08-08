@@ -59,6 +59,8 @@ const (
 	EdgeEntities = "entities"
 	// EdgeOauthGrants holds the string denoting the oauth_grants edge name in mutations.
 	EdgeOauthGrants = "oauth_grants"
+	// EdgeAPICredentials holds the string denoting the api_credentials edge name in mutations.
+	EdgeAPICredentials = "api_credentials"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// GroupTable is the table that holds the group relation/edge.
@@ -124,6 +126,13 @@ const (
 	OauthGrantsInverseTable = "oauth_grants"
 	// OauthGrantsColumn is the table column denoting the oauth_grants relation/edge.
 	OauthGrantsColumn = "user_id"
+	// APICredentialsTable is the table that holds the api_credentials relation/edge.
+	APICredentialsTable = "api_credentials"
+	// APICredentialsInverseTable is the table name for the APICredential entity.
+	// It exists in this package in order to avoid circular dependency with the "apicredential" package.
+	APICredentialsInverseTable = "api_credentials"
+	// APICredentialsColumn is the table column denoting the api_credentials relation/edge.
+	APICredentialsColumn = "user_id"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -386,6 +395,20 @@ func ByOauthGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newOauthGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByAPICredentialsCount orders the results by api_credentials count.
+func ByAPICredentialsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newAPICredentialsStep(), opts...)
+	}
+}
+
+// ByAPICredentials orders the results by api_credentials terms.
+func ByAPICredentials(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newAPICredentialsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newGroupStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -447,5 +470,12 @@ func newOauthGrantsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(OauthGrantsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, OauthGrantsTable, OauthGrantsColumn),
+	)
+}
+func newAPICredentialsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(APICredentialsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, APICredentialsTable, APICredentialsColumn),
 	)
 }

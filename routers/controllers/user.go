@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"errors"
+
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
@@ -12,6 +14,84 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 )
+
+func UserListAPIKeys(c *gin.Context) {
+	keys, err := user.ListAPIKeys(c, dependency.FromContext(c).DBClient(), inventory.UserIDFromContext(c))
+	if err != nil {
+		c.JSON(200, serializer.DBErr(c, "Failed to list API keys", err))
+		return
+	}
+	c.JSON(200, serializer.Response{Data: keys})
+}
+
+func UserCreateAPIKey(c *gin.Context) {
+	var request user.CreateAPIKeyRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(200, serializer.ParamErr(c, "Invalid API key settings", err))
+		return
+	}
+	key, err := user.CreateAPIKey(c, dependency.FromContext(c).DBClient(), inventory.UserIDFromContext(c), request)
+	if err != nil {
+		if errors.Is(err, user.ErrInvalidAPIKeyConfig) {
+			c.JSON(200, serializer.ParamErr(c, err.Error(), nil))
+			return
+		}
+		c.JSON(200, serializer.DBErr(c, "Failed to create API key", err))
+		return
+	}
+	c.JSON(200, serializer.Response{Data: key})
+}
+
+func UserCreateCLIPairingCode(c *gin.Context) {
+	var request user.CreateAPIKeyRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(200, serializer.ParamErr(c, "Invalid API key settings", err))
+		return
+	}
+	code, err := user.CreatePairingCode(c, dependency.FromContext(c).DBClient(), inventory.UserIDFromContext(c), request)
+	if err != nil {
+		if errors.Is(err, user.ErrInvalidAPIKeyConfig) {
+			c.JSON(200, serializer.ParamErr(c, err.Error(), nil))
+			return
+		}
+		c.JSON(200, serializer.DBErr(c, "Failed to create CLI pairing code", err))
+		return
+	}
+	c.JSON(200, serializer.Response{Data: code})
+}
+
+func UserExchangeCLIPairingCode(c *gin.Context) {
+	var request struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(200, serializer.ParamErr(c, "Pairing code is required", err))
+		return
+	}
+	key, err := user.ExchangePairingCode(c, dependency.FromContext(c).DBClient(), request.Code)
+	if err != nil {
+		if errors.Is(err, user.ErrInvalidAPICredential) {
+			c.JSON(200, serializer.ErrWithDetails(c, serializer.CodeCredentialInvalid, "Invalid or expired pairing code", nil))
+			return
+		}
+		c.JSON(200, serializer.DBErr(c, "Failed to exchange pairing code", err))
+		return
+	}
+	c.JSON(200, serializer.Response{Data: key})
+}
+
+func UserRevokeAPIKey(c *gin.Context) {
+	err := user.RevokeAPIKey(c, dependency.FromContext(c).DBClient(), inventory.UserIDFromContext(c), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, user.ErrInvalidAPICredential) {
+			c.JSON(200, serializer.ErrWithDetails(c, serializer.CodeNotFound, "API key not found", nil))
+			return
+		}
+		c.JSON(200, serializer.DBErr(c, "Failed to revoke API key", err))
+		return
+	}
+	c.JSON(200, serializer.Response{})
+}
 
 // StartLoginAuthn 开始注册WebAuthn登录
 func StartLoginAuthn(c *gin.Context) {

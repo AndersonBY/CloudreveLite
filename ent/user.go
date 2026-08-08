@@ -70,9 +70,11 @@ type UserEdges struct {
 	Entities []*Entity `json:"entities,omitempty"`
 	// OauthGrants holds the value of the oauth_grants edge.
 	OauthGrants []*OAuthGrant `json:"oauth_grants,omitempty"`
+	// APICredentials holds the value of the api_credentials edge.
+	APICredentials []*APICredential `json:"api_credentials,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [9]bool
+	loadedTypes [10]bool
 }
 
 // GroupOrErr returns the Group value or an error if the edge
@@ -158,6 +160,15 @@ func (e UserEdges) OauthGrantsOrErr() ([]*OAuthGrant, error) {
 		return e.OauthGrants, nil
 	}
 	return nil, &NotLoadedError{edge: "oauth_grants"}
+}
+
+// APICredentialsOrErr returns the APICredentials value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) APICredentialsOrErr() ([]*APICredential, error) {
+	if e.loadedTypes[9] {
+		return e.APICredentials, nil
+	}
+	return nil, &NotLoadedError{edge: "api_credentials"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -327,6 +338,11 @@ func (u *User) QueryOauthGrants() *OAuthGrantQuery {
 	return NewUserClient(u.config).QueryOauthGrants(u)
 }
 
+// QueryAPICredentials queries the "api_credentials" edge of the User entity.
+func (u *User) QueryAPICredentials() *APICredentialQuery {
+	return NewUserClient(u.config).QueryAPICredentials(u)
+}
+
 // Update returns a builder for updating this User.
 // Note that you need to call User.Unwrap() before calling this method if this User
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -441,6 +457,12 @@ func (e *User) SetEntities(v []*Entity) {
 func (e *User) SetOauthGrants(v []*OAuthGrant) {
 	e.Edges.OauthGrants = v
 	e.Edges.loadedTypes[8] = true
+}
+
+// SetAPICredentials manually set the edge as loaded state.
+func (e *User) SetAPICredentials(v []*APICredential) {
+	e.Edges.APICredentials = v
+	e.Edges.loadedTypes[9] = true
 }
 
 // Users is a parsable slice of User.

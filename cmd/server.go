@@ -24,7 +24,7 @@ var serverCmd = &cobra.Command{
 			dependency.WithConfigPath(confPath),
 			dependency.WithProFlag(constants.IsProBool),
 			dependency.WithLiteMode(true),
-			dependency.WithRequiredDbVersion(constants.BackendVersion),
+			dependency.WithRequiredDbVersion(constants.BackendVersion+constants.LiteSchemaRevision),
 		)
 		server := application.NewServer(dep)
 		logger := dep.Logger()
