@@ -120,7 +120,10 @@ func markAPICommand(cmd *cobra.Command, tokenRequired bool) *cobra.Command {
 }
 
 func newConnectCommand(getClient func() *client, stdout io.Writer) *cobra.Command {
-	var pairingCode string
+	var (
+		pairingCode string
+		quiet       bool
+	)
 	cmd := &cobra.Command{
 		Use:   "connect",
 		Short: "Connect this device with a one-time pairing code",
@@ -151,6 +154,11 @@ func newConnectCommand(getClient func() *client, stdout io.Writer) *cobra.Comman
 			if err := saveConnection(server, result.Key); err != nil {
 				return err
 			}
+			if !quiet {
+				if err := printConnectGuide(cmd.ErrOrStderr(), server, result.ExpiresAt); err != nil {
+					return err
+				}
+			}
 			return printValue(stdout, map[string]any{
 				"connected":        true,
 				"server":           server,
@@ -162,7 +170,32 @@ func newConnectCommand(getClient func() *client, stdout io.Writer) *cobra.Comman
 		},
 	}
 	cmd.Flags().StringVar(&pairingCode, "pairing-code", "", "short-lived pairing code from the CloudreveLite web app")
+	cmd.Flags().BoolVar(&quiet, "quiet", false, "suppress the post-connect usage guide")
 	return markAPICommand(cmd, false)
+}
+
+func printConnectGuide(writer io.Writer, server string, expiresAt time.Time) error {
+	_, err := fmt.Fprintf(writer, `
+Connected to CloudreveLite.
+Your API key was saved in the system credential manager and will not be printed.
+
+Start here:
+  cloudreve-cli me
+  cloudreve-cli list cloudreve://my/
+
+Upload and download:
+  cloudreve-cli upload ./file.txt cloudreve://my/
+  cloudreve-cli download cloudreve://my/file.txt ./file.txt
+
+More commands:
+  cloudreve-cli --help
+  cloudreve-cli <command> --help
+
+Server: %s
+API key expires: %s
+
+`, server, expiresAt.Format(time.RFC3339))
+	return err
 }
 
 func newVersionCommand(stdout io.Writer) *cobra.Command {

@@ -77,8 +77,8 @@ func TestConnectStoresAPIKeyWithoutPrintingIt(t *testing.T) {
 	}))
 	defer server.Close()
 
-	var stdout bytes.Buffer
-	root := newRootCommand(strings.NewReader(""), &stdout, &bytes.Buffer{})
+	var stdout, stderr bytes.Buffer
+	root := newRootCommand(strings.NewReader(""), &stdout, &stderr)
 	root.SetArgs([]string{"--server", server.URL, "connect", "--pairing-code", "crp_pairing"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
@@ -87,9 +87,48 @@ func TestConnectStoresAPIKeyWithoutPrintingIt(t *testing.T) {
 	if strings.Contains(requireOutput, apiKey) || !strings.Contains(requireOutput, `"connected": true`) {
 		t.Fatalf("connect output = %s", requireOutput)
 	}
+	guide := stderr.String()
+	for _, expected := range []string{
+		"Connected to CloudreveLite.",
+		"cloudreve-cli me",
+		"cloudreve-cli list cloudreve://my/",
+		"cloudreve-cli upload ./file.txt cloudreve://my/",
+		"cloudreve-cli download cloudreve://my/file.txt ./file.txt",
+		"API key expires: 2027-01-01T00:00:00Z",
+	} {
+		if !strings.Contains(guide, expected) {
+			t.Fatalf("connect guide missing %q: %s", expected, guide)
+		}
+	}
+	if strings.Contains(guide, apiKey) {
+		t.Fatalf("connect guide printed API key: %s", guide)
+	}
 	stored, err := store.Get(credentialService, credentialAccount(server.URL))
 	if err != nil || stored != apiKey {
 		t.Fatalf("stored credential = %q, err = %v", stored, err)
+	}
+}
+
+func TestConnectQuietSuppressesGuide(t *testing.T) {
+	useMemoryCredentialStore(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, 0, map[string]any{
+			"id":         "quiet-key",
+			"name":       "Quiet setup",
+			"key":        "crl_quiet_0123456789012345678901234567890123456789",
+			"expires_at": "2027-01-01T00:00:00Z",
+		})
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newRootCommand(strings.NewReader(""), &stdout, &stderr)
+	root.SetArgs([]string{"--server", server.URL, "connect", "--pairing-code", "crp_pairing", "--quiet"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("quiet connect stderr = %s", stderr.String())
 	}
 }
 

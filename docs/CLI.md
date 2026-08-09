@@ -28,6 +28,8 @@ cloudreve-cli me
 cloudreve-cli list cloudreve://my/
 ```
 
+The connection result remains JSON on stdout for agents and scripts. For an interactive install, the CLI also prints a short getting-started guide to stderr with the first `me`, `list`, `upload`, and `download` commands. Use `connect --quiet` to suppress that guide.
+
 For CI or an external secret manager, skip local storage and set both values explicitly:
 
 ```bash
