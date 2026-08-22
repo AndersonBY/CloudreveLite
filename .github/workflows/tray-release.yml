@@ -49,11 +49,11 @@ jobs:
               throw 'CloudreveLite Tray signing secrets are not configured.'
           }
 
-      - name: Run Rust tests
-        run: cargo test --workspace --locked
-
       - name: Build signed installer
         run: .\build.ps1
+
+      - name: Run Rust tests
+        run: cargo test --workspace --locked
 
       - name: Verify signatures and generate checksum
         run: |
