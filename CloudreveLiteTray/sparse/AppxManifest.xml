@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+         xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+         xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+         xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap uap10 desktop4 desktop5 com rescap">
+
+  <Identity Name="CloudreveLiteShare"
+            Publisher="CN=CloudreveLiteTray"
+            Version="0.3.0.0"
+            ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>CloudreveLite Share</DisplayName>
+    <PublisherDisplayName>CloudreveLiteTray</PublisherDisplayName>
+    <Logo>Assets\Square150x150Logo.png</Logo>
+    <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+  </Properties>
+
+  <Resources>
+    <Resource Language="zh-CN" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.22000.0"
+                        MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="CloudreveTray"
+                 Executable="CloudreveTray.exe"
+                 uap10:TrustLevel="mediumIL"
+                 uap10:RuntimeBehavior="win32App">
+      <uap:VisualElements DisplayName="CloudreveLite Share"
+                          Description="Upload to CloudreveLite and share links from the Explorer context menu"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png"
+                          Square44x44Logo="Assets\Square44x44Logo.png"
+                          AppListEntry="none" />
+
+      <Extensions>
+        <!-- COM surrogate that hosts the shell extension DLL -->
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:SurrogateServer DisplayName="CloudreveLite Share Context Menu">
+              <com:Class Id="AA8A460B-1449-4FA6-B339-B01B527F7FF5"
+                         Path="cloudreve_shell.dll"
+                         ThreadingModel="STA"
+                         DisplayName="CloudreveLite Upload Command" />
+            </com:SurrogateServer>
+          </com:ComServer>
+        </com:Extension>
+
+        <!-- Windows 11 modern context menu entry for all file types -->
+        <desktop4:Extension Category="windows.fileExplorerContextMenus">
+          <desktop4:FileExplorerContextMenus>
+            <desktop5:ItemType Type="*">
+              <desktop5:Verb Id="CloudreveLiteUpload"
+                             Clsid="AA8A460B-1449-4FA6-B339-B01B527F7FF5" />
+            </desktop5:ItemType>
+          </desktop4:FileExplorerContextMenus>
+        </desktop4:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>
