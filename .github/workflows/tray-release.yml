@@ -108,6 +108,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
       - name: Download release payload
         uses: actions/download-artifact@v4
         with:
