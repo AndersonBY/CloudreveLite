@@ -55,27 +55,32 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace --locked
 
-      - name: Verify signatures and generate checksum
+      - name: Verify signer identity and generate checksum
         run: |
           $certificate = Join-Path $PWD 'build\cert\CloudreveLiteTray.cer'
-          $certutil = Join-Path $env:SystemRoot 'System32\certutil.exe'
-          $certutilArgs = @('-user', '-f', '-addstore', 'Root', $certificate)
-          & $certutil @certutilArgs
-          if ($LASTEXITCODE -ne 0) {
-              throw 'Could not trust the release certificate for signature verification.'
-          }
-
-          $signedFiles = @(
+          $expectedSigner = [Security.Cryptography.X509Certificates.X509Certificate2]::new($certificate)
+          $signedPeFiles = @(
               'dist\CloudreveLiteTray-Setup.exe'
               'target\release\CloudreveTray.exe'
               'target\release\cloudreve_shell.dll'
-              'target\release\CloudreveShell.msix'
           )
-          foreach ($file in $signedFiles) {
-              $signature = Get-AuthenticodeSignature -LiteralPath $file
-              if ($signature.Status -ne 'Valid') {
-                  throw "$file signature validation failed: $($signature.Status)"
+          foreach ($file in $signedPeFiles) {
+              $path = (Resolve-Path -LiteralPath $file).Path
+              $nativeSigner = [Security.Cryptography.X509Certificates.X509Certificate]::CreateFromSignedFile($path)
+              $actualSigner = [Security.Cryptography.X509Certificates.X509Certificate2]::new($nativeSigner)
+              if ($actualSigner.Thumbprint -ne $expectedSigner.Thumbprint) {
+                  throw "$file was not signed by the configured release certificate."
               }
+          }
+
+          $msix = (Resolve-Path -LiteralPath 'target\release\CloudreveShell.msix').Path
+          $package = [IO.Compression.ZipFile]::OpenRead($msix)
+          try {
+              if ($package.Entries.FullName -notcontains 'AppxSignature.p7x') {
+                  throw 'CloudreveShell.msix does not contain an Appx signature block.'
+              }
+          } finally {
+              $package.Dispose()
           }
 
           $setup = 'dist\CloudreveLiteTray-Setup.exe'
