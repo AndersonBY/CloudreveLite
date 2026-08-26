@@ -5,9 +5,8 @@ use windows::Win32::UI::Shell::{
     NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, GetSystemMetrics, LoadImageW, SetForegroundWindow,
-    TrackPopupMenuEx, HICON, HMENU, IMAGE_ICON, LR_DEFAULTCOLOR, MENU_ITEM_FLAGS, MF_CHECKED,
-    MF_SEPARATOR, MF_STRING, SM_CXSMICON, SM_CYSMICON, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
+    AppendMenuW, CreatePopupMenu, DestroyMenu, SetForegroundWindow, TrackPopupMenuEx, HICON, HMENU,
+    MENU_ITEM_FLAGS, MF_CHECKED, MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
     TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_APP,
 };
 
@@ -15,25 +14,13 @@ pub const WM_APP_TRAY: u32 = WM_APP;
 
 pub const IDM_SETTINGS: usize = 2001;
 pub const IDM_AUTOSTART: usize = 2002;
-pub const IDM_WEB: usize = 2003;
+pub const IDM_FILES: usize = 2003;
 pub const IDM_QUIT: usize = 2004;
 
 pub const TRAY_UID: u32 = 1;
 
 fn load_tray_icon() -> Option<HICON> {
-    unsafe {
-        let module = windows::Win32::System::LibraryLoader::GetModuleHandleW(None).ok()?;
-        let h = LoadImageW(
-            Some(windows::Win32::Foundation::HINSTANCE(module.0)),
-            windows::core::PCWSTR(101 as *const u16),
-            IMAGE_ICON,
-            GetSystemMetrics(SM_CXSMICON),
-            GetSystemMetrics(SM_CYSMICON),
-            LR_DEFAULTCOLOR,
-        )
-        .ok()?;
-        Some(HICON(h.0 as *mut _))
-    }
+    unsafe { crate::ui::app_icon(true) }
 }
 fn base_nid(hwnd: HWND) -> NOTIFYICONDATAW {
     let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
@@ -132,8 +119,8 @@ pub fn show_menu(hwnd: HWND, x: i32, y: i32) -> usize {
         let _ = AppendMenuW(
             menu,
             MF_STRING,
-            IDM_WEB,
-            windows::core::PCWSTR(util::wide("打开 CloudreveLite 网页").as_ptr()),
+            IDM_FILES,
+            windows::core::PCWSTR(util::wide("文件管理").as_ptr()),
         );
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
         let _ = AppendMenuW(

@@ -17,8 +17,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "CloudreveLite Tray"
             VALUE "ProductName", "CloudreveLite Tray"
-            VALUE "ProductVersion", "0.3.0"
-            VALUE "FileVersion", "0.3.0"
+            VALUE "ProductVersion", "0.3.1"
+            VALUE "FileVersion", "0.3.1"
             VALUE "OriginalFilename", "CloudreveTray.exe"
         END
     END

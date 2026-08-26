@@ -205,9 +205,11 @@ unsafe fn create_window(hwnd_main: HWND) {
         style: WNDCLASS_STYLES(0),
         lpfnWndProc: Some(wndproc),
         hInstance: hinst,
+        hIcon: ui::app_icon(false).unwrap_or_default(),
         hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
         hbrBackground: ui::background_brush(),
         lpszClassName: PCWSTR(class_name.as_ptr()),
+        hIconSm: ui::app_icon(true).unwrap_or_default(),
         ..Default::default()
     };
     RegisterClassExW(&wc);

@@ -17,8 +17,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "CloudreveLite 托盘分享工具安装程序"
             VALUE "ProductName", "CloudreveLite 托盘分享工具"
-            VALUE "ProductVersion", "0.3.0"
-            VALUE "FileVersion", "0.3.0"
+            VALUE "ProductVersion", "0.3.1"
+            VALUE "FileVersion", "0.3.1"
             VALUE "OriginalFilename", "CloudreveLiteTray-Setup.exe"
         END
     END

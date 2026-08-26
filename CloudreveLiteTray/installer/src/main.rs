@@ -340,7 +340,7 @@ fn install() -> (bool, bool) {
             create_key(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\CloudreveLiteTray")
         {
             reg_set(k, "DisplayName", "CloudreveLite 托盘分享工具");
-            reg_set(k, "DisplayVersion", "0.3.0");
+            reg_set(k, "DisplayVersion", "0.3.1");
             reg_set(k, "Publisher", "CloudreveLiteTray");
             reg_set(k, "DisplayIcon", &format!("{},0", exe_path.display()));
             reg_set(

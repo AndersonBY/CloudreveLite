@@ -127,6 +127,79 @@ pub fn validate_key(server: &str, key: &str) -> Result<(), ApiError> {
     api_call(server, key, "GET", &format!("/file?uri={uri}"), None).map(|_| ())
 }
 
+#[derive(Clone, Deserialize)]
+pub struct FileEntry {
+    #[serde(rename = "type")]
+    pub file_type: i32,
+    pub name: String,
+    pub path: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+#[derive(Deserialize, Default)]
+struct FilePagination {
+    #[serde(default)]
+    page: usize,
+    #[serde(default)]
+    total_items: Option<usize>,
+    #[serde(default)]
+    next_token: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct FileListResponse {
+    #[serde(default)]
+    files: Vec<FileEntry>,
+    #[serde(default)]
+    pagination: FilePagination,
+}
+
+pub fn list_files(server: &str, key: &str, uri: &str) -> Result<Vec<FileEntry>, ApiError> {
+    let encoded = util::percent_encode_query(uri);
+    let mut files = Vec::new();
+    let mut page = None;
+    let mut next_token: Option<String> = None;
+    for _ in 0..10_000 {
+        let mut path =
+            format!("/file?uri={encoded}&page_size=100&order_by=name&order_direction=asc");
+        if let Some(token) = next_token.take() {
+            path.push_str("&next_page_token=");
+            path.push_str(&util::percent_encode_query(&token));
+        } else if let Some(number) = page {
+            path.push_str(&format!("&page={number}"));
+        }
+
+        let data = api_call(server, key, "GET", &path, None)?;
+        let response: FileListResponse = serde_json::from_value(data)
+            .map_err(|e| ApiError::msg(-1, &format!("文件列表响应格式错误: {e}")))?;
+        let before = files.len();
+        let fetched = response.files.len();
+        files.extend(response.files);
+        if let Some(token) = response.pagination.next_token.filter(|v| !v.is_empty()) {
+            next_token = Some(token);
+            continue;
+        }
+
+        if let Some(total) = response.pagination.total_items {
+            if files.len() >= total || files.len() == before {
+                break;
+            }
+        } else if fetched < 100 || files.len() == before {
+            break;
+        }
+        page = Some(response.pagination.page + 1);
+    }
+    Ok(files)
+}
+
+pub fn delete_files(server: &str, key: &str, uris: &[String]) -> Result<(), ApiError> {
+    let body = serde_json::json!({ "uris": uris }).to_string();
+    api_call(server, key, "DELETE", "/file", Some(&body)).map(|_| ())
+}
+
 #[derive(Deserialize)]
 pub struct StoragePolicy {
     #[serde(rename = "type")]

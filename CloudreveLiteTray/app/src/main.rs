@@ -3,6 +3,7 @@
 mod api;
 mod config;
 mod dlg;
+mod files;
 mod pipe;
 mod progress;
 mod tray;
@@ -59,9 +60,8 @@ fn handle_menu(hwnd: HWND, cmd: usize) {
                 );
             }
         }
-        tray::IDM_WEB => {
-            let url = CONFIG.read().unwrap().server.clone();
-            util::open_url(&url);
+        tray::IDM_FILES => {
+            files::open(Some(hwnd));
         }
         tray::IDM_QUIT => unsafe {
             let _ = DestroyWindow(hwnd);
@@ -192,6 +192,10 @@ fn main() {
         progress::preview();
         return;
     }
+    if args.first().map(String::as_str) == Some("--preview-files") {
+        files::preview();
+        return;
+    }
     if !args.is_empty() {
         if !pipe::forward_files(&args) {
             eprintln!("CloudreveLiteTray: 无法将文件发送到托盘进程");
@@ -231,11 +235,7 @@ fn main() {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: hinst,
-            hIcon: windows::Win32::UI::WindowsAndMessaging::LoadIconW(
-                Some(hinst),
-                PCWSTR(101 as *const u16),
-            )
-            .unwrap_or_default(),
+            hIcon: ui::app_icon(false).unwrap_or_default(),
             hCursor: windows::Win32::UI::WindowsAndMessaging::LoadCursorW(
                 None,
                 windows::Win32::UI::WindowsAndMessaging::IDC_ARROW,
@@ -244,7 +244,7 @@ fn main() {
             hbrBackground: Default::default(),
             lpszMenuName: PCWSTR::null(),
             lpszClassName: PCWSTR(class_name.as_ptr()),
-            hIconSm: Default::default(),
+            hIconSm: ui::app_icon(true).unwrap_or_default(),
         };
         let _atom = RegisterClassExW(&wc);
 

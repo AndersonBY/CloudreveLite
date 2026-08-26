@@ -14,7 +14,7 @@ CloudreveLite 的 Windows 桌面客户端：资源管理器右键任意文件 �
 | `CloudreveShell.msix` | 7.6 KB | 稀疏包，Win11 新版右键菜单一级入口 |
 | `CloudreveLiteTray-Setup.exe` | 1.50 MB | 单文件图形安装包（内嵌以上全部） |
 
-对照：Tauri 参考实现常驻内存 80–150 MB。v0.3.0 release 隔离实测中，安装器待机、
+对照：Tauri 参考实现常驻内存 80–150 MB。v0.3.1 release 隔离实测中，安装器待机、
 设置窗口和上传窗口的私有内存分别约 2.71 MB、2.96 MB 和 3.00 MB；这些是界面预览进程
 快照，正式安装后的长期托盘内存仍应单独复测（v0.2.0 旧快照约 7.6 MB）。
 
@@ -25,6 +25,7 @@ CloudreveTray.exe（无参数）        托盘模式：Shell_NotifyIcon + 隐藏
   ├─ pipe 线程   \\.\pipe\cloudreve-lite-tray  收 {"action":"upload"|"quit","files":[...]}
   ├─ worker 线程 上传队列：会话 → 分块 PUT（流式，1MB 级缓冲）→ 完成 → 分享
   └─ 设置对话框   内存 DLGTEMPLATE，服务器/配对码/有效期/下载次数/私密分享
+      文件管理窗口使用原生 Win32 列表控件，按需请求文件列表，不驻留 WebView
 CloudreveTray.exe <文件...>       启动器模式：转发给常驻实例；不在则先拉起再转发
 cloudreve_shell.dll               IExplorerCommand::Invoke → 取选中路径 → 命名管道
 ```
@@ -35,6 +36,7 @@ cloudreve_shell.dll               IExplorerCommand::Invoke → 取选中路径 �
   → OSS `x-oss-complete-all` / S3 XML complete + 回调 → `PUT /api/v4/share` 取回完整分享链接。
   同名冲突（code 40004）自动以 `entity_type=version` 覆盖重试。
 - **反馈**：气泡通知 + 链接进剪贴板（多文件多行），点气泡打开链接；失败为红色错误气泡。
+- **文件管理**：托盘右键“文件管理”打开轻量原生列表，支持刷新、返回上级和双击进入文件夹。
 - **右键菜单**：HKCU 注册表经典菜单（Win10/“显示更多选项”）+ 稀疏 MSIX（Win11 新版菜单一级入口），
   全部当前用户级，无需管理员。
 - **自启**：`HKCU\...\Run`，安装器写入，托盘菜单可开关。
@@ -60,9 +62,9 @@ python assets\gen_icon.py                                               # 重新
 证书私钥、密码、payload 和本机构建目录均不会进入 Git。
 
 ```powershell
-pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.0
-git tag -a tray-v0.3.0 -m "CloudreveLite Tray v0.3.0"
-git push origin tray-v0.3.0
+pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.1
+git tag -a tray-v0.3.1 -m "CloudreveLite Tray v0.3.1"
+git push origin tray-v0.3.1
 ```
 
 ## 安装 / 卸载（用户视角）
@@ -79,6 +81,9 @@ git push origin tray-v0.3.0
    卸载保留 `%APPDATA%\CloudreveLiteTray`（配置/日志），可手动删。
 
 ## 修复记录
+
+- 2026-08-26 v0.3.1：新增轻量原生文件管理窗口，支持完整分页列表、目录浏览、多选和移入回收站；
+  同时修复上传窗口标题栏图标显示问题，并优化托盘入口和文件列表操作布局。
 
 - 2026-08-22 v0.3.0：原生界面整体打磨。
   ① 安装器改为无终端窗口的图形安装向导，提供安装说明、阶段进度、系统确认提示以及
