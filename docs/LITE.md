@@ -82,7 +82,17 @@ Lite Compose 固定覆盖 `CR_SETTING_entity_url_default_ttl=86400` 和 `CR_SETT
 
 证据来源：Git fetch 后逐项比对后端 `upstream/master`（`1c3fe4d`）相对共同基线 `20c95ad` 的三个提交，以及前端 `upstream/master`（`19da0fe`）与本地实现。
 
-- `78994b9`：管理员创建和更新账号时校验邮箱格式及密码长度。本地已纳入对应实现和上游测试，`go test ./service/admin ./pkg/filemanager/manager ./pkg/setting` 通过；生产镜像尚未包含此补丁。
+- `78994b9`：管理员创建和更新账号时校验邮箱格式及密码长度。已纳入对应实现和上游测试，`go test ./service/admin ./pkg/filemanager/manager ./pkg/setting` 通过，并随 4.18.1 部署到生产。
 - `65f8c3f`：Go 1.26.5 工具链升级、远程驱动错误处理和文件系统错误消息调整。未纳入；工具链升级需要单独验证构建与依赖，未发现与本次下载故障有关的变更。
 - `1c3fe4d`：WebDAV COPY/MOVE 与覆盖处理。Lite 不提供 WebDAV，不纳入。
 - 前端 `0834841` 验证码刷新清空及聚焦行为已与本地文件一致；`19da0fe` 为自定义预览应用的主题参数，Lite 不支持该功能，不纳入。
+
+## 4.18.1 发布（2026-09-09 20:19 CST，实时核验）
+
+- 发布标签：[`lite-v4.18.1`](https://github.com/AndersonBY/CloudreveLite/releases/tag/lite-v4.18.1)，源码提交 `13dbd1985ad8ae9f64977168ddf6f2665fff1e33`。[标签构建](https://github.com/AndersonBY/CloudreveLite/actions/runs/34349425502) 的前端构建、Lite 测试、全包 Go 编译、镜像构建及容器冒烟验证全部通过。
+- Linux amd64 镜像为 `cloudreve-lite:4.18.1`，镜像 ID `sha256:145ae835a7f287cfaa42c5f2d013f2b1cc7d9547c706fe4d023fe05ef89765b8`；镜像 revision 标签与发布提交一致。发布包 SHA-256：`0a68573f7810025ac5a01303ef5a0a462dfcc8983174172da36cd0e852d11fe2`，本机及服务器均校验通过。
+- 线上仅替换 CloudreveLite 镜像，Compose 其他字段经解析比对保持一致；数据卷仍为 `cloudreve-lite_cloudreve_lite_data`，端口仍为 `127.0.0.1:5212`，下载有效期和缓存余量仍为 86,400 秒。容器 healthy、无 OOM、无重启；回环与公开健康 API 均返回 4.18.1，公开页面 HTTP 200，启动日志无 error/panic。
+- 现有 CLI 实测：连续两次获取目标文件 URL，签名不同，签名有效期为 86,400 秒；OSS 末尾 1 MiB Range GET 返回 206，完整读取 1,048,576 字节，结束位置为 28,675,153,495。此测试不替代持续 24 小时下载验证。
+- SQLite `quick_check` 通过；部署前后账号、文件、实体、分享、存储策略条数分别为 1、5、4、135、2。容器内存约 57 MiB/256 MiB，根盘可用约 24 GiB，SSH 恢复访问正常。证据来源为 GitHub Actions、发布产物、SSH、SQLite 只读检查及公开 API/OSS 请求。
+- 一致性备份位于 `/home/ecs-user/cloudreve-lite/backups/lite-v4.18.1-20260909`，目录仅 root 可访问，包含 SQLite、应用配置、Compose 和校验清单。SQLite `integrity_check` 通过，备份 SHA-256 为 `8a8413c7f9e852402bef7a6a95dd9a7f650b6001e792651b7dfe50aeb97bc2d1`。
+- 应用回滚：恢复上述备份中的 Compose 并检查语法，仅重建 `cloudreve-lite`；原镜像 `sha256:9d3549d53e83ab83002b4bbf2cff2e49a032f0cd529d798e51d6720dbf4a7902` 保留在主机，备份 Compose 保持 24 小时下载配置。数据库恢复须先停止目标容器并保留现库，校验备份后恢复，属主为 `10001:10001`；正常应用回滚不覆盖数据库。
