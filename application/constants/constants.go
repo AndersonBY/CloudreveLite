@@ -3,7 +3,7 @@ package constants
 // These values will be injected at build time, DO NOT EDIT.
 
 // BackendVersion 当前后端版本号
-var BackendVersion = "4.14.0"
+var BackendVersion = "4.18.1"
 
 // LiteSchemaRevision forces a one-time schema migration for Lite-only tables
 // even when a deployment reuses the same upstream application version.

@@ -65,4 +65,24 @@ Compose 默认使用非 root 用户、只读根文件系统、移除 Linux capab
 - 前端子模块已经切到 `CloudreveLite-frontend`，生产构建只暴露 Lite 工作流。`package.json` 中仍保留部分不进入生产构建的上游依赖，后续可继续清理安装体积。
 - 从旧镜像升级后，数据卷中遗留的 `data/statics` 不再被使用，可以在确认回滚方案后手工删除。
 - 256 MiB 是部署目标而非所有负载下的保证。上线前必须在真实 OSS、文件大小和并发量下测量。
-- 当前工作流只执行测试和镜像构建，不发布镜像。
+- `lite-v<版本号>` 标签触发测试、镜像构建与容器冒烟验证，成功后发布 Linux amd64 镜像包、Compose 和 SHA-256 校验和。部署前校验产物，通过 `docker load` 导入镜像，再使用 `docker compose -f docker-compose.lite.yml up -d --no-build --pull never` 启动。
+
+## 下载有效期（2026-09-09 20:03 CST，实时核验）
+
+Lite Compose 固定覆盖 `CR_SETTING_entity_url_default_ttl=86400` 和 `CR_SETTING_entity_url_cache_margin=86400`。签名 URL 有效期为 24 小时；实体 URL 缓存时间等于有效期减安全余量，结果不大于零时不保存缓存，因此每次获取链接重新签名。已有链接的期限不变，需要从分享页重新获取下载链接。
+
+分享过期和次数限制仍阻止获取新链接；已签发的对象链接在自身期限内仍可访问。源文件回收宽限跟随有效期延长为 24 小时。24 小时并非无限续传保证，超过期限的新请求仍需重新授权。该配置同时适用于文件实体预览 URL。
+
+- 目标文件 `lip_reading.7z`：SQLite 与 OSS Content-Length 均为 28,675,153,496 字节，末尾 1 MiB 公网 Range 请求返回 206，完整读取 1,048,576 字节。接收者停滞的具体原因仍待客户端证据确认，此测试不等同于全文件校验。
+- 部署：仅重建 `cloudreve-lite`，镜像保持 `sha256:9d3549d53e83ab83002b4bbf2cff2e49a032f0cd529d798e51d6720dbf4a7902`；未变更数据库、Nginx 或其他服务。线上 Compose 为 `/home/ecs-user/cloudreve-lite/docker-compose.yml`。
+- 验证来源：Compose 语法检查、容器环境和启动日志均确认两个覆盖值；容器 healthy、无 OOM，回环及公开 `/api/v4/site/ping` 均返回 HTTP 200、业务码 0，启动日志无 error/panic，内存约 22 MiB/256 MiB。未执行真实 24 小时传输测试。
+- 回滚入口：同目录 `docker-compose.yml.before-download-ttl-20260909`，SHA-256 为 `c882cd6f0a6564a51ee565dd7db2e425bb60c969400912ef24ff7bd5411173b1`；恢复配置并检查语法后，仅重建 `cloudreve-lite`。已发出的长有效期 URL 不会因配置回滚而撤销，回滚前须保留其源文件至到期，避免较短回收宽限提前删源。SSH 访问正常。
+
+## 上游核对（2026-09-09，实时核验）
+
+证据来源：Git fetch 后逐项比对后端 `upstream/master`（`1c3fe4d`）相对共同基线 `20c95ad` 的三个提交，以及前端 `upstream/master`（`19da0fe`）与本地实现。
+
+- `78994b9`：管理员创建和更新账号时校验邮箱格式及密码长度。本地已纳入对应实现和上游测试，`go test ./service/admin ./pkg/filemanager/manager ./pkg/setting` 通过；生产镜像尚未包含此补丁。
+- `65f8c3f`：Go 1.26.5 工具链升级、远程驱动错误处理和文件系统错误消息调整。未纳入；工具链升级需要单独验证构建与依赖，未发现与本次下载故障有关的变更。
+- `1c3fe4d`：WebDAV COPY/MOVE 与覆盖处理。Lite 不提供 WebDAV，不纳入。
+- 前端 `0834841` 验证码刷新清空及聚焦行为已与本地文件一致；`19da0fe` 为自定义预览应用的主题参数，Lite 不支持该功能，不纳入。

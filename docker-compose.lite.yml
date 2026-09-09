@@ -1,11 +1,11 @@
 services:
   cloudreve-lite:
-    image: cloudreve-lite:local
+    image: cloudreve-lite:${CLOUDREVE_LITE_VERSION:-4.18.1}
     build:
       context: .
       dockerfile: Dockerfile.lite
       args:
-        APP_VERSION: ${CLOUDREVE_LITE_VERSION:-4.18.0}
+        APP_VERSION: ${CLOUDREVE_LITE_VERSION:-4.18.1}
     restart: unless-stopped
     init: true
     ports:
@@ -14,6 +14,8 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       GOMEMLIMIT: ${CLOUDREVE_LITE_GOMEMLIMIT:-192MiB}
       GOGC: ${CLOUDREVE_LITE_GOGC:-50}
+      CR_SETTING_entity_url_default_ttl: "86400"
+      CR_SETTING_entity_url_cache_margin: "86400"
       CR_CONF_Database.Type: sqlite
       CR_CONF_Database.DBFile: /cloudreve/data/cloudreve.db
       CR_CONF_Redis.Server: ""
