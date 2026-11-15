@@ -4,6 +4,8 @@ CloudreveLite is a resource-conscious fork of Cloudreve for private, temporary f
 
 AI agents and scripts can connect through a one-time web pairing command and use the JSON-first [`cloudreve-cli`](docs/CLI.md) with revocable API keys for direct OSS/S3 upload, download, and temporary share management.
 
+The repository also includes the Windows tray and Explorer context-menu tool [CloudreveLiteTray](CloudreveLiteTray/README.md).
+
 WebDAV, permanent direct links, OAuth/passkeys, archives, media analysis, remote downloads, and remote nodes have been removed from routes and frontend entry points. Storage policies are restricted to Aliyun OSS and generic S3. See [the Lite deployment guide](docs/LITE.md) for the exact scope and deployment instructions.
 
 [中文版本](README_zh-CN.md)

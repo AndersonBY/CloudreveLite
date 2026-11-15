@@ -4,6 +4,8 @@ CloudreveLite 是 Cloudreve 的轻量化 Fork，面向由阿里云 OSS 或兼容
 
 Codex 等 Agent 和脚本可以通过网页生成的一次性配对指令连接自建实例，并使用支持随时撤销 API 密钥的 [`cloudreve-cli`](docs/CLI.md) 完成 OSS/S3 直传、下载和临时分享管理。
 
+仓库同时包含 Windows 托盘与资源管理器右键上传工具 [CloudreveLiteTray](CloudreveLiteTray/README.md)。
+
 WebDAV、永久直链、OAuth/Passkey、压缩归档、媒体分析、离线下载和远程节点等功能已从路由和前端入口移除，存储策略仅允许阿里云 OSS 与通用 S3。准确范围和部署方式见 [Lite 部署文档](docs/LITE.md)。
 
 [English Version](README.md)
