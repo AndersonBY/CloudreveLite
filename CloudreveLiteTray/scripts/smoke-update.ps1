@@ -11,6 +11,7 @@ $payload = Join-Path $root 'installer\payload'
 $sandbox = Join-Path $env:RUNNER_TEMP ('cloudreve-tray-update-' + [guid]::NewGuid().ToString('N'))
 $originalLocal = $env:LOCALAPPDATA
 $originalRoaming = $env:APPDATA
+$originalSmokeInstance = $env:CLOUDREVE_TRAY_SMOKE_INSTANCE
 $parent = $null
 $installer = $null
 $names = @('CloudreveTray.exe', 'cloudreve_shell.dll', 'CloudreveShell.msix', 'CloudreveLiteTray.cer', 'CloudreveLiteTray-Setup.exe')
@@ -18,12 +19,16 @@ $names = @('CloudreveTray.exe', 'cloudreve_shell.dll', 'CloudreveShell.msix', 'C
 try {
     $env:LOCALAPPDATA = Join-Path $sandbox 'local'
     $env:APPDATA = Join-Path $sandbox 'roaming'
+    $env:CLOUDREVE_TRAY_SMOKE_INSTANCE = '1'
     $installDir = Join-Path $env:LOCALAPPDATA 'CloudreveLiteTray'
     $configDir = Join-Path $env:APPDATA 'CloudreveLiteTray'
     New-Item -ItemType Directory -Path $installDir, $configDir -Force | Out-Null
 
+    $previousHashes = @{}
     foreach ($name in $names) {
-        Set-Content -LiteralPath (Join-Path $installDir $name) -Value 'previous-installation-fixture' -Encoding ascii
+        $source = if ($name -eq 'CloudreveLiteTray-Setup.exe') { $setup } else { Join-Path $payload $name }
+        Copy-Item -LiteralPath $source -Destination (Join-Path $installDir $name) -Force
+        $previousHashes[$name] = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
     }
     $config = Join-Path $configDir 'config.json'
     @{
@@ -71,7 +76,7 @@ try {
     $backup = @(Get-ChildItem -LiteralPath (Join-Path $installDir 'backups') -Directory -Filter 'update-*')
     if ($backup.Count -ne 1) { throw 'Expected one complete pre-update backup.' }
     foreach ($name in $names) {
-        if ((Get-Content -LiteralPath (Join-Path $backup[0].FullName $name) -Raw).Trim() -ne 'previous-installation-fixture') {
+        if ((Get-FileHash -LiteralPath (Join-Path $backup[0].FullName $name) -Algorithm SHA256).Hash -ne $previousHashes[$name]) {
             throw "Backup does not contain the previous file: $name"
         }
     }
@@ -89,4 +94,5 @@ finally {
     }
     $env:LOCALAPPDATA = $originalLocal
     $env:APPDATA = $originalRoaming
+    $env:CLOUDREVE_TRAY_SMOKE_INSTANCE = $originalSmokeInstance
 }

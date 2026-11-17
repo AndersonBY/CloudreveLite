@@ -308,11 +308,7 @@ fn install(update: bool) -> Result<(bool, bool), String> {
     ui::note("正在准备安装文件。整个程序安装到当前用户，不会修改系统级应用目录。");
 
     let dir = install_dir();
-    if update {
-        if !machine_cert_present() {
-            return Err("签名证书未就绪，请手动运行安装包完成系统确认。".into());
-        }
-    } else {
+    if !update {
         quit_running_app();
     }
 
@@ -409,7 +405,7 @@ fn install(update: bool) -> Result<(bool, bool), String> {
             }
         }
     }
-    let cert_ok = machine_cert_present();
+    let cert_ok = !update && machine_cert_present();
 
     step("注册 Windows 11 现代右键菜单（稀疏 MSIX）…");
     let mut modern_menu_ok = false;
@@ -688,7 +684,6 @@ fn main() {
             let result = update_parent(&args).and_then(install_update);
             if let Err(error) = result {
                 step(&format!("自动更新失败：{error}"));
-                ui::show_error(&format!("自动更新未完成：{error}"));
                 std::process::exit(1);
             }
             step("自动更新完成");

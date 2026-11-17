@@ -83,9 +83,9 @@ python assets\gen_icon.py                                               # 重新
 证书私钥、密码、payload 和本机构建目录均不会进入 Git。
 
 ```powershell
-pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.2
-git tag -a tray-v0.3.2 -m "CloudreveLite Tray v0.3.2"
-git push origin tray-v0.3.2
+pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.3
+git tag -a tray-v0.3.3 -m "CloudreveLite Tray v0.3.3"
+git push origin tray-v0.3.3
 ```
 
 ## 安装 / 卸载（用户视角）
@@ -103,11 +103,11 @@ git push origin tray-v0.3.2
 
 ## 修复记录
 
-- 2026-11-17 v0.3.2（本地核验，未发布、未替换已安装程序）：新增软件更新区块、后台
+- 2026-11-17 v0.3.3（本地核验，未发布、未替换已安装程序）：新增软件更新区块、后台
   自动检测下载、手动检测下载安装、同签名者校验、上传队列空闲保护和安装失败文件恢复。
   本地签名构建及测试通过；真实 GitHub 手动检测和窗口排版已核验。校验对照中，正常包通过，
   错误哈希、修改后的程序和其他签名者均拒绝。首次安装及线上跨版本自动升级仍待核验。
-  发布工作流新增隔离 Windows 安装器升级冒烟检查；托盘 Release 不占用 CLI 安装脚本所用的
+  发布工作流新增隔离 Windows 安装器升级冒烟检查；更新路径跳过已安装证书和稀疏 MSIX 的重复注册，失败只写诊断日志并恢复旧文件；冒烟夹具使用真实可执行旧版 payload。托盘 Release 不占用 CLI 安装脚本所用的
   `latest` 下载目标。
 
 - 2026-11-17（本地核验，尚未发布或替换已安装程序）：修复分片上传每次请求都新建

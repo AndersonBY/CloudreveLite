@@ -3,8 +3,8 @@
 IDI_APP ICON "..\\assets\\cloud.ico"
 
 1 VERSIONINFO
- FILEVERSION 0,3,2,0
- PRODUCTVERSION 0,3,2,0
+ FILEVERSION 0,3,3,0
+ PRODUCTVERSION 0,3,3,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -17,8 +17,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "CloudreveLite Tray"
             VALUE "ProductName", "CloudreveLite Tray"
-            VALUE "ProductVersion", "0.3.2"
-            VALUE "FileVersion", "0.3.2"
+            VALUE "ProductVersion", "0.3.3"
+            VALUE "FileVersion", "0.3.3"
             VALUE "OriginalFilename", "CloudreveTray.exe"
         END
     END

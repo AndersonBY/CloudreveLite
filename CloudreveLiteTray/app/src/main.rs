@@ -187,7 +187,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 }
 
 fn another_instance_running() -> bool {
-    let name = util::wide("CloudreveLiteTray_SingleInstance_Mutex");
+    let name = if std::env::var_os("CLOUDREVE_TRAY_SMOKE_INSTANCE").is_some() {
+        "CloudreveLiteTray_Smoke_SingleInstance_Mutex"
+    } else {
+        "CloudreveLiteTray_SingleInstance_Mutex"
+    };
+    let name = util::wide(name);
     unsafe {
         let _ = CreateMutexW(None, true, PCWSTR(name.as_ptr()));
         let err = windows::Win32::Foundation::GetLastError();
