@@ -97,7 +97,22 @@ pub fn server(hwnd: windows::Win32::Foundation::HWND, tx: Sender<Vec<String>>) {
                     .unwrap_or_default();
                 util::log(&format!("pipe: upload request, {} file(s)", files.len()));
                 if !files.is_empty() {
-                    let _ = tx.send(files);
+                    if !crate::upload::enqueue(&tx, files) {
+                        let text =
+                            Box::into_raw(Box::new("正在安装更新，请稍后重新上传。".to_string()));
+                        unsafe {
+                            if PostMessageW(
+                                Some(hwnd),
+                                crate::upload::WM_APP_UPLOAD_DONE,
+                                WPARAM(1),
+                                LPARAM(text as isize),
+                            )
+                            .is_err()
+                            {
+                                drop(Box::from_raw(text));
+                            }
+                        }
+                    }
                 }
             }
             _ => {

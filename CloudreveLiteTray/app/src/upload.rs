@@ -3,7 +3,8 @@ use crate::config::Config;
 use crate::util;
 use std::io::Seek;
 use std::path::Path;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Mutex;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
@@ -15,6 +16,94 @@ pub const WM_APP_NEED_SETUP: u32 = windows::Win32::UI::WindowsAndMessaging::WM_A
 pub struct UploadOutcome {
     pub ok: Vec<String>,
     pub failed: Vec<(String, String)>,
+}
+
+#[derive(Default)]
+struct Activity {
+    batches: usize,
+    updating: bool,
+}
+
+impl Activity {
+    fn begin_update(&mut self) -> bool {
+        if self.batches != 0 || self.updating {
+            return false;
+        }
+        self.updating = true;
+        true
+    }
+}
+
+static ACTIVITY: Mutex<Activity> = Mutex::new(Activity {
+    batches: 0,
+    updating: false,
+});
+
+pub fn enqueue(tx: &Sender<Vec<String>>, files: Vec<String>) -> bool {
+    let mut activity = ACTIVITY.lock().unwrap();
+    if activity.updating {
+        return false;
+    }
+    activity.batches += 1;
+    if tx.send(files).is_err() {
+        activity.batches -= 1;
+        return false;
+    }
+    true
+}
+
+pub fn begin_update() -> bool {
+    ACTIVITY.lock().unwrap().begin_update()
+}
+
+pub fn abort_update() {
+    ACTIVITY.lock().unwrap().updating = false;
+}
+
+struct BatchGuard;
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+
+    #[test]
+    fn queued_uploads_block_update_and_update_blocks_new_work() {
+        let mut activity = Activity {
+            batches: 2,
+            updating: false,
+        };
+        assert!(!activity.begin_update());
+        activity.batches = 1;
+        assert!(!activity.begin_update());
+        activity.batches = 0;
+        assert!(activity.begin_update());
+        assert!(activity.updating);
+        assert!(!activity.begin_update());
+    }
+
+    #[test]
+    fn enqueue_tracks_waiting_batches_and_rejects_during_installation() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        assert!(enqueue(&tx, vec!["first".into()]));
+        assert!(enqueue(&tx, vec!["second".into()]));
+        assert!(!begin_update());
+        assert_eq!(rx.recv().unwrap(), vec!["first"]);
+        drop(BatchGuard);
+        assert!(!begin_update());
+        assert_eq!(rx.recv().unwrap(), vec!["second"]);
+        drop(BatchGuard);
+        assert!(begin_update());
+        let accepted = enqueue(&tx, vec!["late".into()]);
+        abort_update();
+        assert!(!accepted);
+        assert!(rx.try_recv().is_err());
+    }
+}
+
+impl Drop for BatchGuard {
+    fn drop(&mut self) {
+        ACTIVITY.lock().unwrap().batches -= 1;
+    }
 }
 
 fn post_str(hwnd: HWND, msg: u32, wparam: usize, text: String) {
@@ -109,6 +198,11 @@ fn upload_one(cfg: &Config, key: &str, path: &Path) -> Result<String, String> {
         ));
     }
 
+    // Keep the pool alive across all parts, retries, and completion.
+    let agent = api::transfer_agent();
+    util::log(&format!(
+        "upload start: bytes={size} chunk_bytes={chunk} parts={expected} policy={policy_type}",
+    ));
     let mut run = || -> Result<(), String> {
         let mut parts: Vec<(u32, String)> = Vec::new();
         for (i, url) in session.upload_urls.iter().enumerate() {
@@ -116,18 +210,25 @@ fn upload_one(cfg: &Config, key: &str, path: &Path) -> Result<String, String> {
             let len = chunk.min(size - offset).max(0) as u64;
             file.seek(std::io::SeekFrom::Start(offset as u64))
                 .map_err(|e| format!("定位读取位置失败: {e}"))?;
-            let etag = api::put_part(&mut file, len, url)
+            let started = std::time::Instant::now();
+            let etag = api::put_part(&agent, &mut file, len, url)
                 .map_err(|e| format!("上传第 {} 块失败: {e}", i + 1))?;
+            util::log(&format!(
+                "upload part done: part={}/{} bytes={len} elapsed_ms={}",
+                i + 1,
+                expected,
+                started.elapsed().as_millis(),
+            ));
             if policy_type == "s3" {
                 let etag = etag.ok_or_else(|| format!("上传第 {} 块: S3 未返回 ETag", i + 1))?;
                 parts.push((i as u32 + 1, etag));
             }
         }
         if policy_type == "oss" {
-            api::complete_oss(&session.complete_url)
+            api::complete_oss(&agent, &session.complete_url)
                 .map_err(|e| format!("完成 OSS 上传失败: {e}"))?;
         } else {
-            api::complete_s3(&session.complete_url, &parts)
+            api::complete_s3(&agent, &session.complete_url, &parts)
                 .map_err(|e| format!("完成 S3 上传失败: {e}"))?;
             api::s3_callback(&cfg.server, &session.session_id, &session.callback_secret)
                 .map_err(|e| format!("S3 回调失败: {}", e.msg))?;
@@ -156,6 +257,7 @@ fn upload_one(cfg: &Config, key: &str, path: &Path) -> Result<String, String> {
 /// changes apply to the next upload without a restart.
 pub fn worker_static(hwnd: HWND, rx: Receiver<Vec<String>>) {
     while let Ok(files) = rx.recv() {
+        let _batch = BatchGuard;
         util::log(&format!("worker: received {} file(s)", files.len()));
         let (server, key, expire, downloads, private) = {
             let c = crate::CONFIG.read().unwrap();
@@ -173,6 +275,7 @@ pub fn worker_static(hwnd: HWND, rx: Receiver<Vec<String>>) {
             expire_days: expire,
             downloads,
             private,
+            auto_update: true,
         };
 
         if key.is_empty() {

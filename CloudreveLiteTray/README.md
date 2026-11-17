@@ -24,6 +24,7 @@ CloudreveLite 的 Windows 桌面客户端：资源管理器右键任意文件 �
 CloudreveTray.exe（无参数）        托盘模式：Shell_NotifyIcon + 隐藏窗口消息循环
   ├─ pipe 线程   \\.\pipe\cloudreve-lite-tray  收 {"action":"upload"|"quit","files":[...]}
   ├─ worker 线程 上传队列：会话 → 分块 PUT（流式，1MB 级缓冲）→ 完成 → 分享
+  ├─ 更新线程   GitHub 正式版检测 → 下载 → SHA-256 / 同签名者校验 → 空闲升级
   └─ 设置对话框   内存 DLGTEMPLATE，服务器/配对码/有效期/下载次数/私密分享
       文件管理窗口使用原生 Win32 列表控件，按需请求文件列表，不驻留 WebView
 CloudreveTray.exe <文件...>       启动器模式：转发给常驻实例；不在则先拉起再转发
@@ -41,6 +42,26 @@ cloudreve_shell.dll               IExplorerCommand::Invoke → 取选中路径 �
   全部当前用户级，无需管理员。
 - **自启**：`HKCU\...\Run`，安装器写入，托盘菜单可开关。
 - **日志**：`%APPDATA%\CloudreveLiteTray\app.log`（每次启动截断，排查用）。
+
+## 软件更新
+
+设置窗口显示当前客户端版本，并提供“自动检查、下载并在空闲时安装”开关和“检查更新”按钮。
+旧配置默认开启自动更新；保存设置后生效。正常启动后约 15 秒检查一次，之后每 6 小时检查；
+手动检测不受自动更新开关限制。检测、下载和校验均在后台执行，状态显示在设置窗口中。
+
+只接受本仓库的稳定 `tray-vX.Y.Z` Release，跳过预览版、草稿和服务端版本，不执行降级。
+安装包必须来自对应标签的固定 GitHub 下载地址，大小不超过 32 MiB，并通过 GitHub 资源
+SHA-256、Windows Authenticode 有效性和与当前程序相同签名者三项校验。签名证书轮换时
+需要手动安装，客户端不会自动信任另一个签名者。下载后的包会在安装前再次校验。
+
+上传队列清空后启动安装器 `--update <旧进程 PID>`，等待旧进程退出，再替换程序并重新启动。
+更新保留连接配置、分享规则与开机自启选择；安装前将五个程序文件备份到
+`%LOCALAPPDATA%\CloudreveLiteTray\backups\update-…`，写入失败或新版立即退出时恢复备份。
+被资源管理器占用的旧 DLL 会移入独立备份目录，连续更新无需覆盖仍在使用的旧 DLL。
+备份与下载缓存保留供恢复使用，卸载时也保留；更新失败后的自动重试至少间隔 6 小时，
+手动检测不受限制。
+
+不带更新功能的旧版本需要先手动运行一次新版安装包，以后才能使用自动升级。
 
 ## 构建
 
@@ -62,9 +83,9 @@ python assets\gen_icon.py                                               # 重新
 证书私钥、密码、payload 和本机构建目录均不会进入 Git。
 
 ```powershell
-pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.1
-git tag -a tray-v0.3.1 -m "CloudreveLite Tray v0.3.1"
-git push origin tray-v0.3.1
+pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.2
+git tag -a tray-v0.3.2 -m "CloudreveLite Tray v0.3.2"
+git push origin tray-v0.3.2
 ```
 
 ## 安装 / 卸载（用户视角）
@@ -78,9 +99,26 @@ git push origin tray-v0.3.1
    「显示更多选项」里。
 4. 卸载：设置→应用→安装的应用→「CloudreveLite 托盘分享工具」，或运行
    `"...\CloudreveLiteTray\CloudreveLiteTray-Setup.exe" --uninstall`。
-   卸载保留 `%APPDATA%\CloudreveLiteTray`（配置/日志），可手动删。
+   卸载保留 `%APPDATA%\CloudreveLiteTray`（配置/日志）及安装目录中的更新备份和下载缓存。
 
 ## 修复记录
+
+- 2026-11-17 v0.3.2（本地核验，未发布、未替换已安装程序）：新增软件更新区块、后台
+  自动检测下载、手动检测下载安装、同签名者校验、上传队列空闲保护和安装失败文件恢复。
+  本地签名构建及测试通过；真实 GitHub 手动检测和窗口排版已核验。校验对照中，正常包通过，
+  错误哈希、修改后的程序和其他签名者均拒绝。首次安装及线上跨版本自动升级仍待核验。
+  发布工作流新增隔离 Windows 安装器升级冒烟检查；托盘 Release 不占用 CLI 安装脚本所用的
+  `latest` 下载目标。
+
+- 2026-11-17（本地核验，尚未发布或替换已安装程序）：修复分片上传每次请求都新建
+  HTTP 客户端、无法复用连接的问题。单个文件的分片、重试和完成请求现在共享一个
+  传输客户端；日志增加分片大小、数量、耗时和重试次数，不记录签名地址或密钥。
+  本机回环 HTTP 测试中，旧实现的三个分片及两个完成请求共建立五条连接，修复后
+  复用一条；同时校验分片内容、尾块、进度字节数、S3 ETag 和不携带 Authorization。
+  只读文件列表 API 确认当前账号使用 OSS 策略。实际公网上传停顿是否消失仍待核验；
+  上传仍逐片等待响应，连接被服务端关闭或网络重试时仍可能出现间隙。
+  另修复不可重试 HTTP 4xx 被库的默认行为当作网络错误重复上传的问题；403 回归测试确认
+  保留原 HTTP 错误并直接结束。
 
 - 2026-08-26 v0.3.1：新增轻量原生文件管理窗口，支持完整分页列表、目录浏览、多选和移入回收站；
   同时修复上传窗口标题栏图标显示问题，并优化托盘入口和文件列表操作布局。

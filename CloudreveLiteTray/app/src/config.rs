@@ -19,6 +19,12 @@ pub struct Config {
     pub expire_days: u32,
     pub downloads: u32,
     pub private: bool,
+    #[serde(default = "auto_update_default")]
+    pub auto_update: bool,
+}
+
+fn auto_update_default() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -29,6 +35,7 @@ impl Default for Config {
             expire_days: 7,
             downloads: 10,
             private: false,
+            auto_update: true,
         }
     }
 }
@@ -40,6 +47,8 @@ struct ConfigFile {
     expire_days: u32,
     downloads: u32,
     private: bool,
+    #[serde(default = "auto_update_default")]
+    auto_update: bool,
 }
 
 pub fn config_path() -> PathBuf {
@@ -59,6 +68,7 @@ pub fn load() -> Config {
             expire_days: f.expire_days.clamp(1, 30),
             downloads: f.downloads.clamp(1, 100),
             private: f.private,
+            auto_update: f.auto_update,
         },
         Err(_) => Config::default(),
     }
@@ -71,6 +81,7 @@ pub fn save(cfg: &Config) -> bool {
         expire_days: cfg.expire_days,
         downloads: cfg.downloads,
         private: cfg.private,
+        auto_update: cfg.auto_update,
     };
     let Ok(text) = serde_json::to_string_pretty(&f) else {
         return false;
@@ -154,6 +165,29 @@ pub fn decrypt_key(enc: &str) -> String {
     dp(&mut blob, false)
         .map(|v| String::from_utf8_lossy(&v).trim().to_string())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_config_keeps_connection_and_defaults_to_auto_update() {
+        let old = serde_json::json!({"server": "https://example.com", "api_key_enc": "encrypted",
+            "expire_days": 14, "downloads": 20, "private": true});
+        let cfg: ConfigFile = serde_json::from_value(old).unwrap();
+        assert!(cfg.auto_update);
+        assert_eq!(cfg.api_key_enc, "encrypted");
+        assert_eq!(
+            (cfg.expire_days, cfg.downloads, cfg.private),
+            (14, 20, true)
+        );
+        let mut cfg = Config::default();
+        cfg.auto_update = false;
+        let round_trip: Config =
+            serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert!(!round_trip.auto_update);
+    }
 }
 
 // ---------------------------------------------------------------- autostart ---

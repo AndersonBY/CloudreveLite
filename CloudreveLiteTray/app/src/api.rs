@@ -29,7 +29,7 @@ impl ApiError {
 /// PlatformVerifier keeps schannel's system roots + AIA chain building.
 /// ureq's default (WebPki roots) forces manual root validation in native-tls,
 /// which breaks servers (e.g. OSS) that send only the leaf certificate.
-fn tls_config() -> TlsConfig {
+pub fn tls_config() -> TlsConfig {
     TlsConfig::builder()
         .provider(TlsProvider::NativeTls)
         .root_certs(RootCerts::PlatformVerifier)
@@ -45,9 +45,10 @@ fn api_agent() -> Agent {
         .new_agent()
 }
 
-fn transfer_agent() -> Agent {
+pub fn transfer_agent() -> Agent {
     Agent::config_builder()
         .tls_config(tls_config())
+        .http_status_as_error(false)
         .timeout_connect(Some(Duration::from_secs(15)))
         .build()
         .new_agent()
@@ -356,13 +357,23 @@ impl std::io::Read for CountingSection<'_> {
 
 /// PUT one chunk to a presigned URL. Streams from `file` starting at its
 /// current position, reading exactly `len` bytes. Returns the response ETag.
-pub fn put_part(file: &mut std::fs::File, len: u64, url: &str) -> Result<Option<String>, String> {
+pub fn put_part(
+    agent: &Agent,
+    file: &mut std::fs::File,
+    len: u64,
+    url: &str,
+) -> Result<Option<String>, String> {
     let start = file.stream_position().unwrap_or(0);
     // byte counter value before this chunk started; retries reset to it
     let base = crate::progress::sent();
     let mut last_err = String::new();
     for attempt in 0..4u32 {
         if attempt > 0 {
+            util::log(&format!(
+                "upload part retry: attempt={} delay_secs={}",
+                attempt + 1,
+                1 << (attempt - 1),
+            ));
             std::thread::sleep(Duration::from_secs(1 << (attempt - 1)));
             if let Err(e) = file.seek(std::io::SeekFrom::Start(start)) {
                 return Err(format!("seek failed: {e}"));
@@ -384,7 +395,7 @@ pub fn put_part(file: &mut std::fs::File, len: u64, url: &str) -> Result<Option<
             .header("Content-Length", len.to_string())
             .body(SendBody::from_reader(&mut section))
             .map_err(|e| e.to_string())?;
-        match transfer_agent().run(req) {
+        match agent.run(req) {
             Ok(mut resp) => {
                 let status = resp.status().as_u16();
                 if (200..300).contains(&status) {
@@ -417,7 +428,7 @@ pub fn put_part(file: &mut std::fs::File, len: u64, url: &str) -> Result<Option<
     Err(last_err)
 }
 
-fn post_url(url: &str, body: Vec<u8>, oss_complete: bool) -> Result<(), String> {
+fn post_url(agent: &Agent, url: &str, body: Vec<u8>, oss_complete: bool) -> Result<(), String> {
     let mut builder = ureq::http::Request::builder()
         .method("POST")
         .uri(url)
@@ -429,9 +440,7 @@ fn post_url(url: &str, body: Vec<u8>, oss_complete: bool) -> Result<(), String> 
             .header("x-oss-complete-all", "yes");
     }
     let req = builder.body(body).map_err(|e| e.to_string())?;
-    let mut resp = transfer_agent()
-        .run(req)
-        .map_err(|e| format!("网络错误: {e}"))?;
+    let mut resp = agent.run(req).map_err(|e| format!("网络错误: {e}"))?;
     let status = resp.status().as_u16();
     let text = read_body_limited(&mut resp, 256 * 1024);
     if !(200..300).contains(&status) {
@@ -449,11 +458,11 @@ fn post_url(url: &str, body: Vec<u8>, oss_complete: bool) -> Result<(), String> 
     Ok(())
 }
 
-pub fn complete_oss(url: &str) -> Result<(), String> {
-    post_url(url, Vec::new(), true)
+pub fn complete_oss(agent: &Agent, url: &str) -> Result<(), String> {
+    post_url(agent, url, Vec::new(), true)
 }
 
-pub fn complete_s3(url: &str, parts: &[(u32, String)]) -> Result<(), String> {
+pub fn complete_s3(agent: &Agent, url: &str, parts: &[(u32, String)]) -> Result<(), String> {
     let mut xml = String::from("<CompleteMultipartUpload>");
     for (num, etag) in parts {
         let esc = etag
@@ -465,7 +474,7 @@ pub fn complete_s3(url: &str, parts: &[(u32, String)]) -> Result<(), String> {
         ));
     }
     xml.push_str("</CompleteMultipartUpload>");
-    post_url(url, xml.into_bytes(), false)
+    post_url(agent, url, xml.into_bytes(), false)
 }
 
 pub fn s3_callback(server: &str, session_id: &str, secret: &str) -> Result<(), ApiError> {
@@ -480,6 +489,162 @@ pub fn s3_callback(server: &str, session_id: &str, secret: &str) -> Result<(), A
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static TRANSFER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn multipart_requests_reuse_connection() {
+        let _guard = TRANSFER_TEST.lock().unwrap();
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/upload", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            let mut connections = 0;
+            let mut bodies = Vec::new();
+            while bodies.len() < 5 {
+                assert!(std::time::Instant::now() < deadline, "missing request");
+                let (stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                        continue;
+                    }
+                    Err(e) => panic!("accept failed: {e}"),
+                };
+                connections += 1;
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream);
+                while bodies.len() < 5 {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap() == 0 {
+                        break;
+                    }
+                    assert!(line.starts_with("PUT ") || line.starts_with("POST "));
+                    let mut len = None;
+                    loop {
+                        line.clear();
+                        assert!(reader.read_line(&mut line).unwrap() > 0);
+                        if line == "\r\n" {
+                            break;
+                        }
+                        assert!(!line.to_ascii_lowercase().starts_with("authorization:"));
+                        if let Some((name, value)) = line.split_once(':') {
+                            if name.eq_ignore_ascii_case("content-length") {
+                                len = Some(value.trim().parse::<usize>().unwrap());
+                            }
+                        }
+                    }
+                    let mut body = vec![0; len.expect("Content-Length")];
+                    reader.read_exact(&mut body).unwrap();
+                    bodies.push(body);
+                    reader
+                        .get_mut()
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nETag: \"part\"\r\n\r\n",
+                        )
+                        .unwrap();
+                }
+            }
+            (connections, bodies)
+        });
+        let path = std::env::temp_dir().join(format!(
+            "cloudreve-tray-parts-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(b"0123456789").unwrap();
+        file.rewind().unwrap();
+        crate::progress::set_sent(0);
+        let agent = transfer_agent();
+        for len in [4, 4, 2] {
+            assert_eq!(
+                put_part(&agent, &mut file, len, &url).unwrap().as_deref(),
+                Some("\"part\"")
+            );
+        }
+        complete_oss(&agent, &url).unwrap();
+        complete_s3(&agent, &url, &[(1, "\"part\"".into())]).unwrap();
+        let sent = crate::progress::sent();
+        drop(file);
+        std::fs::remove_file(path).unwrap();
+        let (connections, bodies) = server.join().unwrap();
+        assert_eq!(sent, 10);
+        assert_eq!(
+            &bodies[..4],
+            &[b"0123".to_vec(), b"4567".to_vec(), b"89".to_vec(), vec![]]
+        );
+        assert!(String::from_utf8_lossy(&bodies[4]).contains("<ETag>\"part\"</ETag>"));
+        assert_eq!(
+            connections, 1,
+            "parts and completion must share the connection"
+        );
+    }
+
+    #[test]
+    fn forbidden_part_is_not_retried_as_a_network_error() {
+        use std::io::{BufRead, BufReader, Write};
+        let _guard = TRANSFER_TEST.lock().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/part", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(stream);
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            let mut body = [0u8; 3];
+            reader.read_exact(&mut body).unwrap();
+            assert_eq!(&body, b"abc");
+            reader
+                .get_mut()
+                .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
+        });
+        let path = std::env::temp_dir().join(format!(
+            "cloudreve-forbidden-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(b"abc").unwrap();
+        file.rewind().unwrap();
+        let result = put_part(&transfer_agent(), &mut file, 3, &url);
+        drop(file);
+        std::fs::remove_file(path).unwrap();
+        server.join().unwrap();
+        assert!(result.unwrap_err().starts_with("HTTP 403:"));
+    }
 
     /// The server serializes `relay` with omitempty: it is absent when false.
     #[test]

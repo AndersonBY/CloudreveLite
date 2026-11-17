@@ -28,7 +28,7 @@ $expectations = @(
     @{ Path = 'app/app.rc'; Text = "VALUE `"FileVersion`", `"$ExpectedVersion`"" }
     @{ Path = 'installer/setup.rc'; Text = "VALUE `"ProductVersion`", `"$ExpectedVersion`"" }
     @{ Path = 'installer/setup.rc'; Text = "VALUE `"FileVersion`", `"$ExpectedVersion`"" }
-    @{ Path = 'installer/src/main.rs'; Text = "`"DisplayVersion`", `"$ExpectedVersion`"" }
+    @{ Path = 'installer/src/main.rs'; Text = 'reg_set(k, "DisplayVersion", env!("CARGO_PKG_VERSION"));' }
 )
 
 foreach ($expectation in $expectations) {

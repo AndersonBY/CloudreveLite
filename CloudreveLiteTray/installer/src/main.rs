@@ -63,16 +63,6 @@ fn step(msg: &str) {
     ui::step(msg);
 }
 
-fn fail(msg: &str) -> ! {
-    ui::finish(
-        false,
-        &format!("{msg} 请关闭占用程序后重试；若问题持续，请查看安装目录权限。"),
-    );
-    loop {
-        std::thread::park();
-    }
-}
-
 fn install_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
@@ -268,40 +258,52 @@ fn same_path(a: &Path, b: &Path) -> bool {
 
 // ------------------------------------------------------------------- install ---
 
-fn install() -> (bool, bool) {
+fn write_payload(dir: &Path, name: &str, data: &[u8]) -> Result<(), String> {
+    let target = dir.join(name);
+    if std::fs::write(&target, data).is_err() {
+        // Explorer can retain the old DLL until its COM host exits.
+        let retired = dir.join("backups").join(format!(
+            "in-use-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&retired).map_err(|_| "无法保留被占用的旧程序文件。")?;
+        std::fs::rename(&target, retired.join(name))
+            .map_err(|_| format!("无法替换 {name}，请关闭占用程序后重试。"))?;
+        std::fs::write(&target, data).map_err(|_| format!("无法写入 {name}。"))?;
+    }
+    Ok(())
+}
+
+fn install(update: bool) -> Result<(bool, bool), String> {
     ui::note("正在准备安装文件。整个程序安装到当前用户，不会修改系统级应用目录。");
 
     let dir = install_dir();
-    quit_running_app();
-
-    step(&format!("创建目录 {}", dir.display()));
-    if std::fs::create_dir_all(&dir).is_err() {
-        fail("无法创建安装目录");
+    if update {
+        if !machine_cert_present() {
+            return Err("签名证书未就绪，请手动运行安装包完成系统确认。".into());
+        }
+    } else {
+        quit_running_app();
     }
 
+    step(&format!("创建目录 {}", dir.display()));
+    std::fs::create_dir_all(&dir).map_err(|_| "无法创建安装目录。")?;
+
     step("释放文件…");
-    let write = |name: &str, data: &[u8]| {
-        let target = dir.join(name);
-        if std::fs::write(&target, data).is_err() {
-            // File may be locked (e.g. the shell DLL loaded by Explorer):
-            // move the loaded copy aside and write a fresh file.
-            let _ = std::fs::rename(&target, dir.join(format!("{name}.old")));
-            if std::fs::write(&target, data).is_err() {
-                fail(&format!(
-                    "无法写入 {name}（文件被占用，请重启资源管理器后重试）"
-                ));
-            }
-        }
-    };
-    write(APP_EXE, PAYLOAD_EXE);
-    write(APP_DLL, PAYLOAD_DLL);
-    write(MSIX_NAME, PAYLOAD_MSIX);
-    write(CER_NAME, PAYLOAD_CER);
+    write_payload(&dir, APP_EXE, PAYLOAD_EXE)?;
+    write_payload(&dir, APP_DLL, PAYLOAD_DLL)?;
+    write_payload(&dir, MSIX_NAME, PAYLOAD_MSIX)?;
+    write_payload(&dir, CER_NAME, PAYLOAD_CER)?;
 
     // Keep a copy of the setup itself so "Add/Remove Programs" can find it.
     if let Ok(self_path) = std::env::current_exe() {
         if !same_path(&self_path, &dir.join(SETUP_NAME)) {
-            let _ = std::fs::copy(&self_path, dir.join(SETUP_NAME));
+            std::fs::copy(&self_path, dir.join(SETUP_NAME))
+                .map_err(|_| "无法更新安装程序副本。")?;
         }
     }
 
@@ -328,19 +330,21 @@ fn install() -> (bool, bool) {
             reg_set(k, "Icon", &format!("{},0", exe_path.display()));
             let _ = RegCloseKey(k);
         }
-        if let Some(k) = create_key(r"Software\Microsoft\Windows\CurrentVersion\Run") {
-            reg_set(
-                k,
-                "CloudreveLiteTray",
-                &format!("\"{}\"", exe_path.display()),
-            );
-            let _ = RegCloseKey(k);
+        if !update {
+            if let Some(k) = create_key(r"Software\Microsoft\Windows\CurrentVersion\Run") {
+                reg_set(
+                    k,
+                    "CloudreveLiteTray",
+                    &format!("\"{}\"", exe_path.display()),
+                );
+                let _ = RegCloseKey(k);
+            }
         }
         if let Some(k) =
             create_key(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\CloudreveLiteTray")
         {
             reg_set(k, "DisplayName", "CloudreveLite 托盘分享工具");
-            reg_set(k, "DisplayVersion", "0.3.1");
+            reg_set(k, "DisplayVersion", env!("CARGO_PKG_VERSION"));
             reg_set(k, "Publisher", "CloudreveLiteTray");
             reg_set(k, "DisplayIcon", &format!("{},0", exe_path.display()));
             reg_set(
@@ -431,15 +435,111 @@ fn install() -> (bool, bool) {
 
     step("启动托盘程序…");
     use std::os::windows::process::CommandExt;
-    let launched = Command::new(&exe_path)
-        .creation_flags(0x00000008)
-        .spawn()
-        .is_ok();
+    let launched = match Command::new(&exe_path).creation_flags(0x00000008).spawn() {
+        Ok(mut child) if update => {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            matches!(child.try_wait(), Ok(None))
+        }
+        Ok(_) => true,
+        Err(_) => false,
+    };
     if !launched {
         println!("  警告: 启动失败，请手动运行 {}", exe_path.display());
     }
 
-    (modern_menu_ok, launched)
+    Ok((modern_menu_ok, launched))
+}
+
+fn update_parent(args: &[String]) -> Result<u32, String> {
+    if args.len() != 2 {
+        return Err("更新参数无效。".into());
+    }
+    args[1]
+        .parse::<u32>()
+        .ok()
+        .filter(|pid| *pid != 0 && *pid != std::process::id())
+        .ok_or_else(|| "更新进程编号无效。".into())
+}
+
+fn wait_for_parent(pid: u32) -> Result<(), String> {
+    use windows::Win32::Foundation::{ERROR_INVALID_PARAMETER, WAIT_OBJECT_0};
+    use windows::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+    };
+    unsafe {
+        let process = match OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+            Ok(process) => process,
+            Err(error)
+                if error.code()
+                    == windows::core::HRESULT::from_win32(ERROR_INVALID_PARAMETER.0) =>
+            {
+                return Ok(())
+            }
+            Err(_) => return Err("无法等待旧版程序退出。".into()),
+        };
+        let result = WaitForSingleObject(process, 30_000);
+        let _ = CloseHandle(process);
+        if result != WAIT_OBJECT_0 {
+            return Err("旧版程序尚未退出，未执行更新。".into());
+        }
+    }
+    Ok(())
+}
+
+const UPDATE_FILES: [&str; 5] = [APP_EXE, APP_DLL, MSIX_NAME, CER_NAME, SETUP_NAME];
+
+fn backup_update(dir: &Path) -> Result<PathBuf, String> {
+    let backup = dir.join("backups").join(format!(
+        "update-{}-{}",
+        env!("CARGO_PKG_VERSION"),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&backup).map_err(|_| "无法创建更新备份目录。")?;
+    for name in UPDATE_FILES {
+        std::fs::copy(dir.join(name), backup.join(name))
+            .map_err(|_| format!("无法备份 {name}，未执行更新。"))?;
+    }
+    Ok(backup)
+}
+
+fn restore_update(dir: &Path, backup: &Path) -> Result<(), String> {
+    for name in UPDATE_FILES {
+        let data =
+            std::fs::read(backup.join(name)).map_err(|_| format!("无法读取 {name} 的备份。"))?;
+        write_payload(dir, name, &data)?;
+    }
+    Ok(())
+}
+
+fn install_update(pid: u32) -> Result<(), String> {
+    wait_for_parent(pid)?;
+    let dir = install_dir();
+    let result = (|| {
+        let backup = backup_update(&dir)?;
+        match install(true) {
+            Ok((_, true)) => Ok(()),
+            result => {
+                let error = match result {
+                    Err(e) => e,
+                    _ => "新版程序未能启动。".into(),
+                };
+                restore_update(&dir, &backup).map_err(|restore| {
+                    format!("{error} 恢复失败：{restore} 备份目录：{}", backup.display())
+                })?;
+                Err(format!("{error} 已恢复原程序文件。"))
+            }
+        }
+    })();
+    if result.is_err() {
+        use std::os::windows::process::CommandExt;
+        let _ = Command::new(dir.join(APP_EXE))
+            .creation_flags(0x00000008)
+            .spawn();
+    }
+    result
 }
 
 // ----------------------------------------------------------------- uninstall ---
@@ -555,6 +655,13 @@ fn main() {
     ui::init_dpi();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(|s| s.as_str()) {
+        Some("--update") => {
+            let result = update_parent(&args).and_then(install_update);
+            if let Err(error) = result {
+                ui::show_error(&format!("自动更新未完成：{error}"));
+                std::process::exit(1);
+            }
+        }
         Some("--uninstall") => {
             if let Err(e) = uninstall_stage1() {
                 ui::show_error(&e);
@@ -566,13 +673,19 @@ fn main() {
                 uninstall_final(&dir);
                 ui::finish(
                     true,
-                    "程序文件和右键菜单已移除。服务器连接配置与日志仍保留在用户配置目录中。",
+                    "程序文件和右键菜单已移除。连接配置、日志与更新备份仍保留在用户目录中。",
                 );
             });
         }
         _ => {
             ui::run(ui::Mode::Install, || {
-                let (modern_menu, launched) = install();
+                let (modern_menu, launched) = match install(false) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        ui::finish(false, &error);
+                        return;
+                    }
+                };
                 let detail = match (modern_menu, launched) {
                 (true, true) => "托盘程序已经启动。首次使用时，请在设置窗口中粘贴网页生成的配对码。",
                 (false, true) => "托盘程序已经启动。经典右键菜单可用；Windows 11 一级菜单可稍后重新安装启用。",
@@ -581,5 +694,97 @@ fn main() {
                 ui::finish(true, detail);
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_arguments_require_a_valid_parent() {
+        assert!(update_parent(&["--update".into()]).is_err());
+        for value in [
+            "0".to_string(),
+            "bad".to_string(),
+            std::process::id().to_string(),
+        ] {
+            assert!(update_parent(&["--update".into(), value]).is_err());
+        }
+        assert_eq!(update_parent(&["--update".into(), "1".into()]).unwrap(), 1);
+    }
+
+    #[test]
+    fn update_backup_restores_only_program_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "cloudreve-update-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        for name in UPDATE_FILES {
+            std::fs::write(dir.join(name), b"old").unwrap();
+        }
+        std::fs::write(dir.join("config.json"), b"keep").unwrap();
+        let backup = backup_update(&dir).unwrap();
+        for name in UPDATE_FILES {
+            write_payload(&dir, name, b"new").unwrap();
+        }
+        restore_update(&dir, &backup).unwrap();
+        for name in UPDATE_FILES {
+            assert_eq!(std::fs::read(dir.join(name)).unwrap(), b"old");
+            std::fs::remove_file(dir.join(name)).unwrap();
+            std::fs::remove_file(backup.join(name)).unwrap();
+        }
+        assert_eq!(std::fs::read(dir.join("config.json")).unwrap(), b"keep");
+        std::fs::remove_file(dir.join("config.json")).unwrap();
+        std::fs::remove_dir(&backup).unwrap();
+        std::fs::remove_dir(dir.join("backups")).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
+    }
+
+    #[test]
+    fn repeated_updates_can_replace_dlls_still_loaded_by_explorer() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "cloudreve-locked-update-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let file = dir.join(APP_DLL);
+        std::fs::write(&file, b"v1").unwrap();
+        let first = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1 | 4)
+            .open(&file)
+            .unwrap();
+        write_payload(&dir, APP_DLL, b"v2").unwrap();
+        let second = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1 | 4)
+            .open(&file)
+            .unwrap();
+        write_payload(&dir, APP_DLL, b"v3").unwrap();
+        assert_eq!(std::fs::read(&file).unwrap(), b"v3");
+        drop((first, second));
+        std::fs::remove_file(&file).unwrap();
+        let retired = std::fs::read_dir(dir.join("backups"))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(retired.len(), 2);
+        for entry in retired {
+            std::fs::remove_file(entry.path().join(APP_DLL)).unwrap();
+            std::fs::remove_dir(entry.path()).unwrap();
+        }
+        std::fs::remove_dir(dir.join("backups")).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }

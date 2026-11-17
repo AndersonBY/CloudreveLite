@@ -22,6 +22,12 @@ const IDC_SUBTITLE: i32 = 1008;
 const IDC_SHOW_KEY: i32 = 1009;
 const IDC_SECTION_SHARE: i32 = 1010;
 const IDC_STATUS: i32 = 1011;
+const IDC_SECTION_UPDATE: i32 = 1012;
+const IDC_VERSION: i32 = 1013;
+const IDC_AUTO_UPDATE: i32 = 1014;
+const IDC_CHECK_UPDATE: i32 = 1015;
+const IDC_UPDATE_STATUS: i32 = 1016;
+const TIMER_UPDATE: usize = 81;
 const IDOK: i32 = 1;
 const IDCANCEL: i32 = 2;
 
@@ -45,6 +51,7 @@ static STATUS_KIND: AtomicI32 = AtomicI32::new(STATUS_MUTED);
 static FONT_TITLE: AtomicIsize = AtomicIsize::new(0);
 static FONT_BODY: AtomicIsize = AtomicIsize::new(0);
 static FONT_STRONG: AtomicIsize = AtomicIsize::new(0);
+static WINDOW: AtomicIsize = AtomicIsize::new(0);
 
 struct Tpl {
     buf: Vec<u16>,
@@ -136,7 +143,7 @@ fn build_template() -> Vec<u16> {
     t.xy(0);
     t.xy(0);
     t.xy(348);
-    t.xy(264);
+    t.xy(336);
     t.w(0);
     t.w(0);
     t.str("CloudreveLite 设置");
@@ -246,11 +253,53 @@ fn build_template() -> Vec<u16> {
         "自动生成访问密码",
     );
 
-    t.item(label, 16, 222, 184, 20, IDC_STATUS as u16, ATOM_STATIC, "");
+    t.item(label | SS_ETCHEDHORZ, 16, 223, 316, 1, 0, ATOM_STATIC, "");
+    t.item(
+        label,
+        16,
+        233,
+        64,
+        11,
+        IDC_SECTION_UPDATE as u16,
+        ATOM_STATIC,
+        "软件更新",
+    );
+    t.item(label, 86, 233, 246, 11, IDC_VERSION as u16, ATOM_STATIC, "");
+    t.item(
+        button | BS_AUTOCHECKBOX,
+        16,
+        251,
+        222,
+        13,
+        IDC_AUTO_UPDATE as u16,
+        ATOM_BUTTON,
+        "自动检查、下载并在空闲时安装",
+    );
+    t.item(
+        button | BS_OWNERDRAW,
+        248,
+        248,
+        84,
+        18,
+        IDC_CHECK_UPDATE as u16,
+        ATOM_BUTTON,
+        "检查更新",
+    );
+    t.item(
+        label,
+        16,
+        271,
+        316,
+        18,
+        IDC_UPDATE_STATUS as u16,
+        ATOM_STATIC,
+        "",
+    );
+    t.item(label, 16, 294, 316, 14, IDC_STATUS as u16, ATOM_STATIC, "");
     t.item(
         button | BS_OWNERDRAW,
         16,
-        239,
+        313,
         74,
         18,
         IDC_TEST as u16,
@@ -260,7 +309,7 @@ fn build_template() -> Vec<u16> {
     t.item(
         button | BS_DEFPUSHBUTTON | BS_OWNERDRAW,
         208,
-        239,
+        313,
         56,
         18,
         IDOK as u16,
@@ -270,7 +319,7 @@ fn build_template() -> Vec<u16> {
     t.item(
         button | BS_OWNERDRAW,
         276,
-        239,
+        313,
         56,
         18,
         IDCANCEL as u16,
@@ -395,6 +444,10 @@ fn do_save(hwnd: HWND) {
         expire_days: days,
         downloads,
         private,
+        auto_update: unsafe {
+            SendDlgItemMessageW(hwnd, IDC_AUTO_UPDATE, BM_GETCHECK, WPARAM(0), LPARAM(0)).0
+                == BST_CHECKED
+        },
     };
     if !config::save(&new_config) {
         return set_status(
@@ -428,6 +481,7 @@ unsafe fn ensure_fonts() -> (
 }
 
 unsafe fn initialize(hwnd: HWND) {
+    WINDOW.store(hwnd.0 as isize, Ordering::Relaxed);
     ui::set_dpi(GetDpiForWindow(hwnd));
     ui::apply_light_frame(hwnd);
     let (title_font, body_font, strong_font) = ensure_fonts();
@@ -442,6 +496,10 @@ unsafe fn initialize(hwnd: HWND) {
         IDC_SUBTITLE,
         IDC_SHOW_KEY,
         IDC_STATUS,
+        IDC_VERSION,
+        IDC_AUTO_UPDATE,
+        IDC_CHECK_UPDATE,
+        IDC_UPDATE_STATUS,
         IDOK,
         IDCANCEL,
     ] {
@@ -457,6 +515,15 @@ unsafe fn initialize(hwnd: HWND) {
         GetDlgItem(Some(hwnd), IDC_SECTION_SHARE).unwrap_or_default(),
         strong_font,
     );
+    ui::apply_font(
+        GetDlgItem(Some(hwnd), IDC_SECTION_UPDATE).unwrap_or_default(),
+        strong_font,
+    );
+    set_text(
+        hwnd,
+        IDC_VERSION,
+        &format!("当前版本 v{}", crate::update::VERSION),
+    );
 
     let cfg = crate::CONFIG.read().unwrap();
     set_text(hwnd, IDC_SERVER, &cfg.server);
@@ -467,6 +534,7 @@ unsafe fn initialize(hwnd: HWND) {
         .position(|day| *day == cfg.expire_days)
         .unwrap_or(2);
     let private = cfg.private;
+    let auto_update = cfg.auto_update;
     drop(cfg);
 
     for day in DAYS {
@@ -483,6 +551,15 @@ unsafe fn initialize(hwnd: HWND) {
     if private {
         SendDlgItemMessageW(hwnd, IDC_PRIVATE, BM_SETCHECK, WPARAM(1), LPARAM(0));
     }
+    SendDlgItemMessageW(
+        hwnd,
+        IDC_AUTO_UPDATE,
+        BM_SETCHECK,
+        WPARAM(usize::from(auto_update)),
+        LPARAM(0),
+    );
+    refresh_update(hwnd);
+    windows::Win32::UI::WindowsAndMessaging::SetTimer(Some(hwnd), TIMER_UPDATE, 500, None);
     SendDlgItemMessageW(hwnd, IDC_KEY, EM_SETPASSWORDCHAR, WPARAM(0x25cf), LPARAM(0));
     let cue = if has_key {
         "已连接；留空会保留当前 API Key"
@@ -505,6 +582,10 @@ unsafe fn initialize(hwnd: HWND) {
 
 unsafe extern "system" fn proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> isize {
     match message {
+        windows::Win32::UI::WindowsAndMessaging::WM_TIMER if wparam.0 == TIMER_UPDATE => {
+            refresh_update(hwnd);
+            1
+        }
         WM_INITDIALOG => {
             initialize(hwnd);
             1
@@ -515,8 +596,8 @@ unsafe extern "system" fn proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
             let control = HWND(lparam.0 as *mut _);
             let id = GetDlgCtrlID(control);
             let color = match id {
-                IDC_TITLE | IDC_SECTION_SHARE => ui::TEXT,
-                IDC_SUBTITLE | IDC_HINT => ui::MUTED,
+                IDC_TITLE | IDC_SECTION_SHARE | IDC_SECTION_UPDATE => ui::TEXT,
+                IDC_SUBTITLE | IDC_HINT | IDC_VERSION | IDC_UPDATE_STATUS => ui::MUTED,
                 IDC_STATUS => match STATUS_KIND.load(Ordering::Relaxed) {
                     STATUS_INFO => ui::ACCENT,
                     STATUS_SUCCESS => ui::SUCCESS,
@@ -552,6 +633,10 @@ unsafe extern "system" fn proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
                         );
                     }
                     IDC_TEST => do_test(hwnd),
+                    IDC_CHECK_UPDATE => {
+                        crate::update::check(true);
+                        refresh_update(hwnd);
+                    }
                     IDOK => do_save(hwnd),
                     IDCANCEL => {
                         let _ = EndDialog(hwnd, 0);
@@ -564,7 +649,10 @@ unsafe extern "system" fn proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
         WM_DRAWITEM => {
             if lparam.0 != 0 {
                 let item = &*(lparam.0 as *const DRAWITEMSTRUCT);
-                if matches!(item.CtlID as i32, IDC_TEST | IDOK | IDCANCEL) {
+                if matches!(
+                    item.CtlID as i32,
+                    IDC_TEST | IDC_CHECK_UPDATE | IDOK | IDCANCEL
+                ) {
                     ui::draw_button(item, item.CtlID as i32 == IDOK);
                     return 1;
                 }
@@ -592,5 +680,34 @@ pub fn open(owner: Option<HWND>) -> bool {
             LPARAM(0),
         )
     };
+    WINDOW.store(0, Ordering::Relaxed);
     result != 0 && result != -1
+}
+
+fn refresh_update(hwnd: HWND) {
+    let (text, busy) = crate::update::status();
+    set_text(
+        hwnd,
+        IDC_UPDATE_STATUS,
+        if text.is_empty() {
+            "手动检查可下载并安装新版本；正在上传时会延后重启。"
+        } else {
+            &text
+        },
+    );
+    unsafe {
+        let _ = windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow(
+            GetDlgItem(Some(hwnd), IDC_CHECK_UPDATE).unwrap_or_default(),
+            !busy,
+        );
+    }
+}
+
+pub fn close_for_update() {
+    let hwnd = WINDOW.load(Ordering::Relaxed);
+    if hwnd != 0 {
+        unsafe {
+            let _ = EndDialog(HWND(hwnd as *mut _), 0);
+        }
+    }
 }

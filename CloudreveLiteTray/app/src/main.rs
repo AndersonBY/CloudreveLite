@@ -8,6 +8,7 @@ mod pipe;
 mod progress;
 mod tray;
 mod ui;
+mod update;
 mod upload;
 mod util;
 
@@ -28,6 +29,7 @@ static CONFIG: RwLock<config::Config> = RwLock::new(config::Config {
     expire_days: 7,
     downloads: 10,
     private: false,
+    auto_update: true,
 });
 
 static LINKS_LAST: Mutex<String> = Mutex::new(String::new());
@@ -76,6 +78,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         return LRESULT(0);
     }
     match msg {
+        update::WM_UPDATE_EXIT => {
+            dlg::close_for_update();
+            let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                Some(hwnd),
+                WM_CLOSE,
+                WPARAM(0),
+                LPARAM(0),
+            );
+            LRESULT(0)
+        }
+        windows::Win32::UI::WindowsAndMessaging::WM_TIMER if wparam.0 == 80 => {
+            update::tick(hwnd);
+            LRESULT(0)
+        }
         progress::WM_PROG_BEGIN
         | progress::WM_PROG_FILE
         | progress::WM_PROG_DONE
@@ -280,6 +296,8 @@ fn main() {
         let hwnd_pipe = hwnd.0 as usize;
         std::thread::spawn(move || upload::worker_static(HWND(hwnd_worker as *mut _), rx));
         std::thread::spawn(move || pipe::server(HWND(hwnd_pipe as *mut _), tx));
+
+        windows::Win32::UI::WindowsAndMessaging::SetTimer(Some(hwnd), 80, 1000, None);
 
         if first_run {
             tray::balloon(
