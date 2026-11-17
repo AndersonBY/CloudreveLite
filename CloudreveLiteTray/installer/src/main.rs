@@ -11,8 +11,10 @@
 //! --uninstall: two-stage. The first stage copies itself to %TEMP% and
 //! relaunches from there so the copy in the install directory can be deleted.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Storage::FileSystem::{
@@ -38,6 +40,23 @@ const CERT_SUBJECT: &str = "CN=CloudreveLiteTray";
 const PACKAGE_ID: &str = "CloudreveLiteShare";
 const GENERIC_WRITE: u32 = 0x40000000;
 
+static UPDATE_LOG: Mutex<Option<std::fs::File>> = Mutex::new(None);
+
+fn init_update_log() {
+    let Some(base) = std::env::var_os("APPDATA") else {
+        return;
+    };
+    let dir = PathBuf::from(base).join(APP_DIR_NAME);
+    if std::fs::create_dir_all(&dir).is_ok() {
+        *UPDATE_LOG.lock().unwrap() = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(dir.join("update.log"))
+            .ok();
+    }
+}
+
 static PAYLOAD_EXE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/payload/CloudreveTray.exe"
@@ -61,6 +80,13 @@ fn wide(s: &str) -> Vec<u16> {
 
 fn step(msg: &str) {
     ui::step(msg);
+    if let Some(file) = UPDATE_LOG.lock().unwrap().as_mut() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let _ = writeln!(file, "[{now}] {msg}");
+    }
 }
 
 fn install_dir() -> PathBuf {
@@ -515,9 +541,11 @@ fn restore_update(dir: &Path, backup: &Path) -> Result<(), String> {
 }
 
 fn install_update(pid: u32) -> Result<(), String> {
+    step("等待旧进程退出");
     wait_for_parent(pid)?;
     let dir = install_dir();
     let result = (|| {
+        step("备份现有程序文件");
         let backup = backup_update(&dir)?;
         match install(true) {
             Ok((_, true)) => Ok(()),
@@ -656,11 +684,14 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(|s| s.as_str()) {
         Some("--update") => {
+            init_update_log();
             let result = update_parent(&args).and_then(install_update);
             if let Err(error) = result {
+                step(&format!("自动更新失败：{error}"));
                 ui::show_error(&format!("自动更新未完成：{error}"));
                 std::process::exit(1);
             }
+            step("自动更新完成");
         }
         Some("--uninstall") => {
             if let Err(e) = uninstall_stage1() {

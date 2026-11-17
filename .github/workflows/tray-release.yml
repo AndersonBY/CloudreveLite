@@ -58,6 +58,14 @@ jobs:
       - name: Smoke test unattended update
         run: .\scripts\smoke-update.ps1
 
+      - name: Preserve update failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tray-update-diagnostics
+          path: ${{ runner.temp }}/cloudreve-tray-update-*/roaming/CloudreveLiteTray/update.log
+          if-no-files-found: ignore
+
       - name: Verify signer identity and generate checksum
         run: |
           $certificate = Join-Path $PWD 'build\cert\CloudreveLiteTray.cer'

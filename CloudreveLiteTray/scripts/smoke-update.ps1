@@ -51,7 +51,11 @@ try {
     }
     $parent = [Diagnostics.Process]::Start($parentInfo)
     $installer = Start-Process -FilePath $setup -ArgumentList @('--update', [string]$parent.Id) -WindowStyle Hidden -PassThru
-    if (-not $installer.WaitForExit(90000)) { throw 'Unattended update did not finish within 90 seconds.' }
+    if (-not $installer.WaitForExit(90000)) {
+        $updateLog = Join-Path $configDir 'update.log'
+        if (Test-Path -LiteralPath $updateLog) { Get-Content -LiteralPath $updateLog | Write-Host }
+        throw 'Unattended update did not finish within 90 seconds.'
+    }
     if ($installer.ExitCode -ne 0) { throw "Unattended update failed: $($installer.ExitCode)" }
 
     foreach ($name in $names) {
