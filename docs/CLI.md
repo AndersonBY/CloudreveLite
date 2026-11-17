@@ -4,7 +4,12 @@
 
 ## Download
 
-Each GitHub Release publishes Linux, macOS, and Windows archives for amd64 and arm64. Verify the downloaded archive against the `SHA256SUMS` file in the same Release before running it.
+CLI releases use independent `cli-vX.Y.Z` tags; the current CLI release line is
+`cli-v0.1.2`. Pushing one of these tags runs tests and builds all six platform
+archives. Tray releases do not replace the repository's `latest` download target,
+so the CLI install commands continue to find their archives and checksums.
+
+Each CLI release publishes Linux, macOS, and Windows archives for amd64 and arm64. Verify the downloaded archive against the `SHA256SUMS` file in the same release before running it.
 
 The CLI can also be built from source:
 
@@ -64,6 +69,11 @@ cloudreve-cli delete cloudreve://my/final-report.pdf
 ```
 
 When an upload destination ends with `/`, the local filename is appended. Otherwise, the destination is treated as the complete file URI. `--overwrite` requests a new version for an existing destination. Upload data goes directly to signed OSS/S3 URLs and never receives the Cloudreve bearer token. Relayed uploads and storage policies other than OSS/S3 are rejected by the Lite CLI.
+
+The CLI reuses its transfer client and connection pool across parts and completion
+requests. A regression test verifies a single storage connection for both OSS and
+S3 multipart uploads. Parts remain sequential, so response waits and retries can
+still produce gaps in network activity.
 
 Shares default to 7 days and 10 downloads. The CLI enforces the Lite limits of 1-30 days and 1-100 downloads:
 

@@ -1,6 +1,9 @@
 name: Publish CloudreveLite CLI
 
 on:
+  push:
+    tags:
+      - cli-v*
   pull_request:
     paths:
       - .github/workflows/cli-release.yml
@@ -28,13 +31,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_REF: ${{ github.event.release.tag_name || inputs.tag || github.sha }}
-  ASSET_VERSION: ${{ github.event.release.tag_name || inputs.tag || format('snapshot-{0}', github.run_number) }}
+  RELEASE_REF: ${{ github.event.release.tag_name || inputs.tag || (github.ref_type == 'tag' && github.ref_name) || github.sha }}
+  ASSET_VERSION: ${{ github.event.release.tag_name || inputs.tag || (github.ref_type == 'tag' && github.ref_name) || format('snapshot-{0}', github.run_number) }}
 
 jobs:
   test:
     name: Test CLI
-    if: github.event_name != 'release' || endsWith(github.event.release.tag_name, '-cli') || startsWith(github.event.release.tag_name, 'lite-v')
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'cli-v') || endsWith(github.event.release.tag_name, '-cli') || startsWith(github.event.release.tag_name, 'lite-v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -160,4 +163,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "${RELEASE_REF}" dist/* --clobber
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${RELEASE_REF}" == cli-v* ]] && ! gh release view "${RELEASE_REF}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_REF}" dist/* \
+              --verify-tag --latest \
+              --title "CloudreveLite CLI ${RELEASE_REF#cli-}" \
+              --notes-from-tag
+          else
+            gh release upload "${RELEASE_REF}" dist/* --clobber
+          fi

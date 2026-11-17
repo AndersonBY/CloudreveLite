@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -22,7 +24,8 @@ func TestUploadFileDirectOSSAndS3(t *testing.T) {
 			callbackCalled := false
 			cancelCalled := false
 
-			storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var connections atomic.Int32
+			storage := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if got := r.Header.Get("Authorization"); got != "" {
 					t.Errorf("Cloudreve authorization leaked to storage: %q", got)
 				}
@@ -60,6 +63,12 @@ func TestUploadFileDirectOSSAndS3(t *testing.T) {
 					t.Fatalf("unexpected storage path %s", r.URL.Path)
 				}
 			}))
+			storage.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+				if state == http.StateNew {
+					connections.Add(1)
+				}
+			}
+			storage.Start()
 			defer storage.Close()
 
 			apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +123,9 @@ func TestUploadFileDirectOSSAndS3(t *testing.T) {
 			}
 			if cancelCalled {
 				t.Fatal("completed upload was canceled")
+			}
+			if got := connections.Load(); got != 1 {
+				t.Fatalf("parts and completion used %d storage connections, want 1", got)
 			}
 		})
 	}
