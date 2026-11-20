@@ -6,6 +6,7 @@ on:
       - master
     tags:
       - lite-v*
+      - tray-v*
   pull_request:
   workflow_dispatch:
 
@@ -17,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  APP_VERSION: 4.18.1
+  APP_VERSION: 4.18.2
 
 jobs:
   validate:
@@ -120,7 +121,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:5212/ >/dev/null
 
       - name: Publish Lite release
-        if: startsWith(github.ref, 'refs/tags/lite-v')
+        if: startsWith(github.ref, 'refs/tags/lite-v') || startsWith(github.ref, 'refs/tags/tray-v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -137,5 +138,20 @@ jobs:
 
           Verify the downloaded assets with \`sha256sum -c SHA256SUMS\`, import the image with \`docker load -i cloudreve-lite-${APP_VERSION}-linux-amd64.tar.gz\`, then start with \`docker compose -f docker-compose.lite.yml up -d --no-build --pull never\`.
           EOF
-          gh release create "${GITHUB_REF_NAME}" release/*.tar.gz release/docker-compose.lite.yml release/SHA256SUMS \
-            --verify-tag --title "CloudreveLite ${APP_VERSION}" --notes-file release/notes.md
+          if [[ "${GITHUB_REF_NAME}" == lite-v* ]]; then
+            gh release create "${GITHUB_REF_NAME}" release/*.tar.gz release/docker-compose.lite.yml release/SHA256SUMS \
+              --verify-tag --latest=false --title "CloudreveLite ${APP_VERSION}" --notes-file release/notes.md
+            exit 0
+          fi
+
+          for attempt in {1..12}; do
+            if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+              break
+            fi
+            gh release create "${GITHUB_REF_NAME}" \
+              --verify-tag --latest=false \
+              --title "CloudreveLite release ${GITHUB_REF_NAME#tray-}" \
+              --notes-from-tag || true
+            sleep 5
+          done
+          gh release upload "${GITHUB_REF_NAME}" release/*.tar.gz release/docker-compose.lite.yml release/SHA256SUMS --clobber

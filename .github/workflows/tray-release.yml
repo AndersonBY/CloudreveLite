@@ -134,8 +134,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           version="${GITHUB_REF_NAME#tray-v}"
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --verify-tag \
-            --latest=false \
-            --title "CloudreveLite Tray v${version}" \
-            --notes-from-tag
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --verify-tag \
+              --latest=true \
+              --title "CloudreveLite release ${version}" \
+              --notes-from-tag
+          fi
+          gh release edit "${GITHUB_REF_NAME}" --latest=true

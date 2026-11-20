@@ -92,6 +92,7 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	getClient := func() *client { return api }
 	root.AddCommand(
 		newVersionCommand(stdout),
+		newUpdateCommand(stdout),
 		newConnectCommand(getClient, stdout),
 		newLoginCommand(getClient, stdin, stdout),
 		newLogin2FACommand(getClient, stdin, stdout),

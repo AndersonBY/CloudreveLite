@@ -38,10 +38,7 @@ static WND: AtomicIsize = AtomicIsize::new(0);
 static VISUAL_STATE: AtomicU64 = AtomicU64::new(0); // 0 uploading, 1 success, 2 error
 static PREVIEW: AtomicBool = AtomicBool::new(false);
 
-pub fn add_sent(n: u64) {
-    SENT.fetch_add(n, Ordering::Relaxed);
-}
-
+#[cfg(test)]
 pub fn sent() -> u64 {
     SENT.load(Ordering::Relaxed)
 }

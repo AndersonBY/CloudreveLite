@@ -83,9 +83,9 @@ python assets\gen_icon.py                                               # 重新
 证书私钥、密码、payload 和本机构建目录均不会进入 Git。
 
 ```powershell
-pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.3
-git tag -a tray-v0.3.3 -m "CloudreveLite Tray v0.3.3"
-git push origin tray-v0.3.3
+pwsh -NoProfile -File scripts\check-version.ps1 -ExpectedVersion 0.3.4
+git tag -a tray-v0.3.4 -m "CloudreveLite Tray v0.3.4"
+git push origin tray-v0.3.4
 ```
 
 ## 安装 / 卸载（用户视角）
@@ -102,6 +102,8 @@ git push origin tray-v0.3.3
    卸载保留 `%APPDATA%\CloudreveLiteTray`（配置/日志）及安装目录中的更新备份和下载缓存。
 
 ## 修复记录
+
+- 2026-11-20 v0.3.4：分片上传改为最多三路并发，复用同一连接池并保持全局进度、ETag 顺序和失败清理；同步加入 CLI 更新命令与 Tray、CLI、Lite 共用 Release 发布流程。
 
 - 2026-11-17 v0.3.3（本地核验，未发布、未替换已安装程序）：新增软件更新区块、后台
   自动检测下载、手动检测下载安装、同签名者校验、上传队列空闲保护和安装失败文件恢复。

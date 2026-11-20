@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - cli-v*
+      - tray-v*
   pull_request:
     paths:
       - .github/workflows/cli-release.yml
@@ -11,11 +12,9 @@ on:
       - docs/CLI.md
       - scripts/install-cli.ps1
       - scripts/install-cli.sh
+      - cmd/cloudreve-cli/VERSION
       - go.mod
       - go.sum
-  release:
-    types:
-      - published
   workflow_dispatch:
     inputs:
       tag:
@@ -27,17 +26,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: cli-release-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  group: cli-release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 env:
-  RELEASE_REF: ${{ github.event.release.tag_name || inputs.tag || (github.ref_type == 'tag' && github.ref_name) || github.sha }}
-  ASSET_VERSION: ${{ github.event.release.tag_name || inputs.tag || (github.ref_type == 'tag' && github.ref_name) || format('snapshot-{0}', github.run_number) }}
+  RELEASE_REF: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name) || github.sha }}
 
 jobs:
   test:
     name: Test CLI
-    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'cli-v') || endsWith(github.event.release.tag_name, '-cli') || startsWith(github.event.release.tag_name, 'lite-v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -57,6 +54,16 @@ jobs:
 
       - name: Check installer syntax
         run: bash -n scripts/install-cli.sh
+
+      - name: Check CLI version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          cli_version="$(tr -d '\r\n' < cmd/cloudreve-cli/VERSION)"
+          [[ "${cli_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "${GITHUB_REF_NAME}" == cli-v* ]]; then
+            test "${GITHUB_REF_NAME}" = "cli-v${cli_version}"
+          fi
 
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
@@ -102,6 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           commit="$(git rev-parse --short=12 HEAD)"
+          cli_version="$(tr -d '\r\n' < cmd/cloudreve-cli/VERSION)"
           archive="cloudreve-cli_${GOOS}_${GOARCH}"
           binary="cloudreve-cli"
           if [[ "${GOOS}" == "windows" ]]; then
@@ -111,16 +119,17 @@ jobs:
           mkdir -p dist/package
           go build \
             -trimpath \
-            -ldflags="-s -w -X main.version=${ASSET_VERSION} -X main.commit=${commit}" \
+            -ldflags="-s -w -X main.version=cli-v${cli_version} -X main.commit=${commit}" \
             -o "dist/package/${binary}" \
             ./cmd/cloudreve-cli
           cp LICENSE docs/CLI.md dist/package/
+          printf 'cli-v%s\n' "${cli_version}" > "dist/package/cloudreve-cli-version-v${cli_version}.txt"
 
           if [[ "${GOOS}" == "windows" ]]; then
-            (cd dist/package && zip -9 "../${archive}.zip" "${binary}" LICENSE CLI.md)
+            (cd dist/package && zip -9 "../${archive}.zip" "${binary}" LICENSE CLI.md cloudreve-cli-version-v${cli_version}.txt)
             echo "asset=dist/${archive}.zip" >> "${GITHUB_OUTPUT}"
           else
-            tar -C dist/package -czf "dist/${archive}.tar.gz" "${binary}" LICENSE CLI.md
+            tar -C dist/package -czf "dist/${archive}.tar.gz" "${binary}" LICENSE CLI.md "cloudreve-cli-version-v${cli_version}.txt"
             echo "asset=dist/${archive}.tar.gz" >> "${GITHUB_OUTPUT}"
           fi
 
@@ -157,6 +166,8 @@ jobs:
         working-directory: dist
         run: |
           cp ../scripts/install-cli.ps1 ../scripts/install-cli.sh .
+          cli_version="$(tr -d '\r\n' < ../cmd/cloudreve-cli/VERSION)"
+          printf 'cli-v%s\n' "${cli_version}" > "cloudreve-cli-version-v${cli_version}.txt"
           sha256sum cloudreve-cli_* install-cli.ps1 install-cli.sh > SHA256SUMS
 
       - name: Upload assets to GitHub release
@@ -166,11 +177,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${RELEASE_REF}" == cli-v* ]] && ! gh release view "${RELEASE_REF}" >/dev/null 2>&1; then
-            gh release create "${RELEASE_REF}" dist/* \
-              --verify-tag --latest \
-              --title "CloudreveLite CLI ${RELEASE_REF#cli-}" \
-              --notes-from-tag
-          else
-            gh release upload "${RELEASE_REF}" dist/* --clobber
+          if [[ "${RELEASE_REF}" == cli-v* ]]; then
+            if ! gh release view "${RELEASE_REF}" >/dev/null 2>&1; then
+              gh release create "${RELEASE_REF}" dist/* \
+                --verify-tag --latest=false \
+                --title "CloudreveLite CLI ${RELEASE_REF#cli-}" \
+                --notes-from-tag
+            else
+              gh release upload "${RELEASE_REF}" dist/* --clobber
+            fi
+            exit 0
           fi
+
+          for attempt in {1..12}; do
+            if gh release view "${RELEASE_REF}" >/dev/null 2>&1; then
+              break
+            fi
+            gh release create "${RELEASE_REF}" \
+              --verify-tag --latest=false \
+              --title "CloudreveLite release ${RELEASE_REF#tray-}" \
+              --notes-from-tag || true
+            sleep 5
+          done
+          gh release upload "${RELEASE_REF}" dist/* --clobber

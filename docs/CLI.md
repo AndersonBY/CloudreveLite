@@ -4,12 +4,31 @@
 
 ## Download
 
-CLI releases use independent `cli-vX.Y.Z` tags; the current CLI release line is
-`cli-v0.1.2`. Pushing one of these tags runs tests and builds all six platform
-archives. Tray releases do not replace the repository's `latest` download target,
-so the CLI install commands continue to find their archives and checksums.
+The CLI release line is currently `cli-v0.1.3`. A `cli-vX.Y.Z` tag still supports
+a CLI-only release, while a `tray-vX.Y.Z` tag is the bundled release entry point:
+it publishes the Tray installer, CLI archives, and the Lite server package to the
+same GitHub Release. Only the bundled release is marked as the repository's
+`latest` release.
 
 Each CLI release publishes Linux, macOS, and Windows archives for amd64 and arm64. Verify the downloaded archive against the `SHA256SUMS` file in the same release before running it.
+
+## Update
+
+Check for a newer CLI without changing the installed binary:
+
+```bash
+cloudreve-cli update --check
+```
+
+Install the newest stable CLI for the current operating system and architecture:
+
+```bash
+cloudreve-cli update
+```
+
+The command selects stable CLI metadata, downloads the matching GitHub archive,
+verifies `SHA256SUMS`, and replaces the current executable. Windows finishes the
+replacement immediately after the command exits.
 
 The CLI can also be built from source:
 

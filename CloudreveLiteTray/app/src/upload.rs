@@ -4,7 +4,7 @@ use crate::util;
 use std::io::Seek;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
@@ -12,6 +12,8 @@ pub const WM_APP_UPLOAD_DONE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_
 pub const WM_APP_UPLOAD_STATE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 3;
 pub const WM_APP_UPLOAD_LINKS: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 4;
 pub const WM_APP_NEED_SETUP: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 5;
+
+const MAX_PARALLEL_PARTS: usize = 3;
 
 pub struct UploadOutcome {
     pub ok: Vec<String>,
@@ -106,6 +108,117 @@ impl Drop for BatchGuard {
     }
 }
 
+#[cfg(test)]
+mod parallel_tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    #[test]
+    fn upload_parts_use_three_concurrent_requests() {
+        let _guard = crate::api::TRANSFER_TEST.lock().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/part", listener.local_addr().unwrap());
+        let completed = Arc::new(AtomicUsize::new(0));
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let completed_server = Arc::clone(&completed);
+        let active_server = Arc::clone(&active);
+        let max_active_server = Arc::clone(&max_active);
+
+        let server = std::thread::spawn(move || {
+            let mut handlers = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while completed_server.load(Ordering::Relaxed) < 6 {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "missing parallel requests"
+                );
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(2)))
+                            .unwrap();
+                        let completed = Arc::clone(&completed_server);
+                        let active = Arc::clone(&active_server);
+                        let max_active = Arc::clone(&max_active_server);
+                        handlers.push(std::thread::spawn(move || {
+                            let mut reader = BufReader::new(stream);
+                            loop {
+                                if completed.load(Ordering::Relaxed) >= 6 {
+                                    break;
+                                }
+                                let mut line = String::new();
+                                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                                    break;
+                                }
+                                let mut length = 0usize;
+                                loop {
+                                    line.clear();
+                                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                                        return;
+                                    }
+                                    if line == "\r\n" {
+                                        break;
+                                    }
+                                    if let Some((name, value)) = line.split_once(':') {
+                                        if name.eq_ignore_ascii_case("content-length") {
+                                            length = value.trim().parse().unwrap();
+                                        }
+                                    }
+                                }
+                                let mut body = vec![0u8; length];
+                                reader.read_exact(&mut body).unwrap();
+                                let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                                max_active.fetch_max(now, Ordering::SeqCst);
+                                std::thread::sleep(Duration::from_millis(150));
+                                active.fetch_sub(1, Ordering::SeqCst);
+                                completed.fetch_add(1, Ordering::SeqCst);
+                                reader
+                                    .get_mut()
+                                    .write_all(
+                                        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n",
+                                    )
+                                    .unwrap();
+                            }
+                        }));
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("accept failed: {error}"),
+                }
+            }
+            for handler in handlers {
+                handler.join().unwrap();
+            }
+        });
+
+        let path = std::env::temp_dir().join(format!(
+            "cloudreve-parallel-upload-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(&vec![b'x'; 6 * 1024]).unwrap();
+        drop(file);
+        let urls = vec![url; 6];
+        let agent = api::transfer_agent();
+        let result = upload_parts_parallel(&path, 6 * 1024, 1024, &urls, &agent, "oss");
+        std::fs::remove_file(path).unwrap();
+        result.unwrap();
+        server.join().unwrap();
+        assert_eq!(completed.load(Ordering::Relaxed), 6);
+        assert_eq!(max_active.load(Ordering::Relaxed), 3);
+    }
+}
+
 fn post_str(hwnd: HWND, msg: u32, wparam: usize, text: String) {
     let boxed = Box::into_raw(Box::new(text)) as isize;
     unsafe {
@@ -140,6 +253,79 @@ fn open_session(
     }
 }
 
+fn upload_parts_parallel(
+    path: &Path,
+    size: i64,
+    chunk: i64,
+    urls: &[String],
+    agent: &ureq::Agent,
+    policy_type: &str,
+) -> Result<Vec<Option<String>>, String> {
+    let progress_slots = Arc::new(Mutex::new(vec![0u64; urls.len()]));
+    let mut etags = vec![None; urls.len()];
+
+    for start in (0..urls.len()).step_by(MAX_PARALLEL_PARTS) {
+        let end = (start + MAX_PARALLEL_PARTS).min(urls.len());
+        let batch = std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(end - start);
+            for index in start..end {
+                let url = &urls[index];
+                let progress_slots = Arc::clone(&progress_slots);
+                handles.push(scope.spawn(move || -> Result<(usize, Option<String>), String> {
+                    let mut file = std::fs::File::open(path)
+                        .map_err(|e| format!("打开分片文件失败: {e}"))?;
+                    let offset = index as i64 * chunk;
+                    let len = chunk.min(size - offset).max(0) as u64;
+                    file.seek(std::io::SeekFrom::Start(offset as u64))
+                        .map_err(|e| format!("定位读取位置失败: {e}"))?;
+
+                    let report: Arc<dyn Fn(u64) + Send + Sync> = {
+                        let progress_slots = Arc::clone(&progress_slots);
+                        Arc::new(move |part_sent| {
+                            let total = {
+                                let mut slots = progress_slots.lock().unwrap();
+                                slots[index] = part_sent;
+                                slots.iter().sum()
+                            };
+                            crate::progress::set_sent(total);
+                        })
+                    };
+                    let started = std::time::Instant::now();
+                    let etag = api::put_part_with_progress(
+                        agent, &mut file, len, url, report,
+                    )
+                    .map_err(|e| format!("上传第 {} 块失败: {e}", index + 1))?;
+                    util::log(&format!(
+                        "upload part done: part={}/{} bytes={len} elapsed_ms={} parallel={MAX_PARALLEL_PARTS}",
+                        index + 1,
+                        urls.len(),
+                        started.elapsed().as_millis(),
+                    ));
+                    if policy_type == "s3" && etag.is_none() {
+                        return Err(format!("上传第 {} 块: S3 未返回 ETag", index + 1));
+                    }
+                    Ok((index, etag))
+                }));
+            }
+
+            let mut results = Vec::with_capacity(handles.len());
+            for handle in handles {
+                let result = handle
+                    .join()
+                    .map_err(|_| "上传线程异常终止".to_string())??;
+                results.push(result);
+            }
+            Ok::<_, String>(results)
+        })?;
+
+        for (index, etag) in batch {
+            etags[index] = etag;
+        }
+    }
+
+    Ok(etags)
+}
+
 fn upload_one(cfg: &Config, key: &str, path: &Path) -> Result<String, String> {
     let meta = std::fs::metadata(path).map_err(|e| format!("读取文件失败: {e}"))?;
     if !meta.is_file() {
@@ -158,8 +344,6 @@ fn upload_one(cfg: &Config, key: &str, path: &Path) -> Result<String, String> {
         .unwrap_or_else(|| "file".into());
     let mime = util::guess_mime(path);
     let uri = format!("cloudreve://my/{}", util::percent_encode_path(&name));
-
-    let mut file = std::fs::File::open(path).map_err(|e| format!("打开文件失败: {e}"))?;
 
     let session = open_session(cfg, key, &uri, size, mtime, &mime)?;
 
@@ -201,28 +385,24 @@ fn upload_one(cfg: &Config, key: &str, path: &Path) -> Result<String, String> {
     // Keep the pool alive across all parts, retries, and completion.
     let agent = api::transfer_agent();
     util::log(&format!(
-        "upload start: bytes={size} chunk_bytes={chunk} parts={expected} policy={policy_type}",
+        "upload start: bytes={size} chunk_bytes={chunk} parts={expected} policy={policy_type} parallel={MAX_PARALLEL_PARTS}",
     ));
-    let mut run = || -> Result<(), String> {
-        let mut parts: Vec<(u32, String)> = Vec::new();
-        for (i, url) in session.upload_urls.iter().enumerate() {
-            let offset = (i as i64) * chunk;
-            let len = chunk.min(size - offset).max(0) as u64;
-            file.seek(std::io::SeekFrom::Start(offset as u64))
-                .map_err(|e| format!("定位读取位置失败: {e}"))?;
-            let started = std::time::Instant::now();
-            let etag = api::put_part(&agent, &mut file, len, url)
-                .map_err(|e| format!("上传第 {} 块失败: {e}", i + 1))?;
-            util::log(&format!(
-                "upload part done: part={}/{} bytes={len} elapsed_ms={}",
-                i + 1,
-                expected,
-                started.elapsed().as_millis(),
-            ));
-            if policy_type == "s3" {
-                let etag = etag.ok_or_else(|| format!("上传第 {} 块: S3 未返回 ETag", i + 1))?;
-                parts.push((i as u32 + 1, etag));
-            }
+    let run = || -> Result<(), String> {
+        let etags = upload_parts_parallel(
+            path,
+            size,
+            chunk,
+            &session.upload_urls,
+            &agent,
+            &policy_type,
+        )?;
+        let parts: Vec<(u32, String)> = etags
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, etag)| etag.map(|etag| (index as u32 + 1, etag)))
+            .collect();
+        if policy_type == "s3" && parts.len() != expected {
+            return Err("S3 分片 ETag 数量不完整".into());
         }
         if policy_type == "oss" {
             api::complete_oss(&agent, &session.complete_url)

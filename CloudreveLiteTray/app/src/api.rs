@@ -1,6 +1,7 @@
 use crate::util;
 use serde::Deserialize;
 use std::io::{Read, Seek};
+use std::sync::Arc;
 use std::time::Duration;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::{Agent, SendBody};
@@ -12,6 +13,9 @@ pub struct ApiError {
     pub code: i64,
     pub msg: String,
 }
+
+#[cfg(test)]
+pub(crate) static TRANSFER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 impl ApiError {
     fn msg(code: i64, m: &str) -> Self {
@@ -339,6 +343,8 @@ fn read_body_limited(resp: &mut ureq::http::Response<ureq::Body>, limit: usize) 
 /// aborts promptly when the user cancels.
 struct CountingSection<'a> {
     inner: std::io::Take<&'a std::fs::File>,
+    report: Arc<dyn Fn(u64) + Send + Sync>,
+    sent: u64,
 }
 
 impl std::io::Read for CountingSection<'_> {
@@ -350,22 +356,37 @@ impl std::io::Read for CountingSection<'_> {
             ));
         }
         let n = self.inner.read(buf)?;
-        crate::progress::add_sent(n as u64);
+        self.sent += n as u64;
+        (self.report)(self.sent);
         Ok(n)
     }
 }
 
 /// PUT one chunk to a presigned URL. Streams from `file` starting at its
 /// current position, reading exactly `len` bytes. Returns the response ETag.
+#[cfg(test)]
 pub fn put_part(
     agent: &Agent,
     file: &mut std::fs::File,
     len: u64,
     url: &str,
 ) -> Result<Option<String>, String> {
-    let start = file.stream_position().unwrap_or(0);
-    // byte counter value before this chunk started; retries reset to it
     let base = crate::progress::sent();
+    let report: Arc<dyn Fn(u64) + Send + Sync> =
+        Arc::new(move |part_sent| crate::progress::set_sent(base + part_sent));
+    put_part_with_progress(agent, file, len, url, report)
+}
+
+/// PUT one chunk while reporting the bytes currently transferred for this
+/// chunk. The callback may be called with zero when a retry restarts it.
+pub fn put_part_with_progress(
+    agent: &Agent,
+    file: &mut std::fs::File,
+    len: u64,
+    url: &str,
+    report: Arc<dyn Fn(u64) + Send + Sync>,
+) -> Result<Option<String>, String> {
+    let start = file.stream_position().unwrap_or(0);
     let mut last_err = String::new();
     for attempt in 0..4u32 {
         if attempt > 0 {
@@ -384,9 +405,11 @@ pub fn put_part(
         }
         // Re-create the section reader per attempt; reset progress to the
         // chunk start so retries do not inflate the byte counter.
-        crate::progress::set_sent(base);
+        report(0);
         let mut section = CountingSection {
             inner: (&*file).take(len),
+            report: Arc::clone(&report),
+            sent: 0,
         };
         let req = ureq::http::Request::builder()
             .method("PUT")
@@ -489,8 +512,6 @@ pub fn s3_callback(server: &str, session_id: &str, secret: &str) -> Result<(), A
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    static TRANSFER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn multipart_requests_reuse_connection() {
